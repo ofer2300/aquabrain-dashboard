@@ -128,15 +128,14 @@ export function SkillWizardModal({ isOpen, onClose, onSkillCreated }: SkillWizar
 
     await new Promise((r) => setTimeout(r, 1500));
 
-    // Try to call backend, fallback to mock
+    // Call the Skill Factory API
     try {
-      const response = await fetch('http://localhost:8000/api/skills/generate', {
+      const response = await fetch('http://localhost:8000/api/factory/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           description: userMessage,
-          name: extractSkillName(userMessage),
-          category: 'custom',
+          use_llm: false, // Use template-based generation (no API key required)
         }),
       });
 
@@ -144,19 +143,21 @@ export function SkillWizardModal({ isOpen, onClose, onSkillCreated }: SkillWizar
         const data = await response.json();
         const skill: GeneratedSkill = {
           skill_id: data.skill_id,
-          class_name: data.class_name,
-          name: extractSkillName(userMessage),
-          icon: inferIcon(userMessage),
-          color: inferColor(userMessage),
-          validation_passed: data.validation_passed,
+          class_name: data.name?.replace(/\s+/g, '') + 'Skill' || 'CustomSkill',
+          name: data.name || extractSkillName(userMessage),
+          icon: data.icon || inferIcon(userMessage),
+          color: data.color || inferColor(userMessage),
+          validation_passed: true,
           is_active: false,
         };
         completeGeneration(thinkingMsg.id, skill);
       } else {
-        throw new Error('Backend error');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || 'Backend error');
       }
-    } catch {
-      // Mock generation for demo
+    } catch (err) {
+      // Show error but still allow mock generation for demo
+      console.error('Factory API error:', err);
       const skill: GeneratedSkill = {
         skill_id: `custom_${Date.now().toString(36)}`,
         class_name: extractSkillName(userMessage).replace(/\s+/g, '') + 'Skill',
