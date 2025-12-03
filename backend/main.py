@@ -359,8 +359,53 @@ async def update_task(task_id: str, status: str, stage: Optional[str] = None):
 
 @app.get("/api/health")
 async def health_check():
-    """Simple health check endpoint."""
-    return {"status": "healthy"}
+    """
+    Enhanced health check endpoint.
+    Checks system resources and component availability.
+    """
+    import psutil
+    from pathlib import Path
+
+    # Disk check for logs
+    log_dir = Path(__file__).parent / "logs"
+    log_dir.mkdir(exist_ok=True)
+
+    disk = psutil.disk_usage(str(log_dir))
+    disk_free_gb = disk.free / (1024 ** 3)
+    disk_ok = disk_free_gb > 1.0  # Require at least 1 GB
+
+    # Memory check
+    memory = psutil.virtual_memory()
+    memory_ok = memory.percent < 90
+
+    # Bridge check (Mock mode = always OK)
+    bridge_status = "mock_mode"
+    bridge_ok = True
+
+    # Overall health
+    all_ok = disk_ok and memory_ok and bridge_ok
+
+    return {
+        "status": "healthy" if all_ok else "degraded",
+        "checks": {
+            "disk": {
+                "ok": disk_ok,
+                "free_gb": round(disk_free_gb, 2),
+                "message": "OK" if disk_ok else "Low disk space"
+            },
+            "memory": {
+                "ok": memory_ok,
+                "used_percent": memory.percent,
+                "message": "OK" if memory_ok else "High memory usage"
+            },
+            "bridge": {
+                "ok": bridge_ok,
+                "mode": bridge_status,
+                "message": "Running in mock mode"
+            }
+        },
+        "uptime_seconds": (datetime.now() - startup_time).seconds
+    }
 
 
 # === Engineering Auto-Pilot Endpoint ===

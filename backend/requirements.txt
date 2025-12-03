@@ -14,3 +14,13 @@ ezdxf>=1.0.0
 
 # HTTP Client (for external APIs)
 httpx>=0.24.0
+
+# Logging (Enterprise Grade)
+loguru>=0.7.0
+
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+
+# Utilities
+psutil>=5.9.0
