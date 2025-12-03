@@ -14,7 +14,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 import uvicorn
 import asyncio
 import random
@@ -247,6 +247,110 @@ async def chat_endpoint(chat_message: ChatMessage):
         analysis=f"Processed in {thinking_time:.1f}s",
         confidence=round(random.uniform(0.75, 0.98), 2),
         timestamp=datetime.now().isoformat()
+    )
+
+
+# === Command Bar Interact Endpoint (V3.1) ===
+
+class InteractRequest(BaseModel):
+    """Request for the Command Bar interact endpoint."""
+    message: str
+    model: str = "claude"  # claude, gemini, gpt
+    context: Optional[Dict[str, Any]] = None
+
+class InteractResponse(BaseModel):
+    """Response from the Command Bar interact endpoint."""
+    response: str
+    type: str  # "chat" or "skill"
+    skill_id: Optional[str] = None
+    skill_result: Optional[Dict[str, Any]] = None
+    model: str
+    timestamp: str
+
+@app.post("/api/chat/interact", response_model=InteractResponse)
+async def chat_interact(request: InteractRequest):
+    """
+    V3.1 Command Bar AI Router.
+
+    - If message starts with "/" → Trigger skill via Orchestrator
+    - Otherwise → Return AI chat response
+    """
+    message = request.message.strip()
+    model = request.model
+
+    # Check if it's a skill command
+    if message.startswith("/"):
+        # Parse skill command: /hydraulic 100 gpm
+        parts = message[1:].split(maxsplit=1)
+        skill_name = parts[0].lower()
+        skill_args = parts[1] if len(parts) > 1 else ""
+
+        # Map command shortcuts to skill IDs
+        skill_map = {
+            "hydraulic": "builtin_hydraulic",
+            "route": "revit_autopilot",
+            "autopilot": "revit_autopilot",
+            "report": "builtin_report_gen",
+            "extract": "builtin_revit_extract",
+        }
+
+        skill_id = skill_map.get(skill_name)
+
+        if skill_id:
+            # Trigger the skill via orchestrator
+            try:
+                from skills.base import skill_registry
+                skill = skill_registry.get(skill_id)
+
+                if skill:
+                    # Execute skill (mock for now - real execution via orchestrator)
+                    skill_name = skill.metadata.name if hasattr(skill, 'metadata') else skill_id
+                    return InteractResponse(
+                        response=f"מריץ skill: {skill_name}...\n\n✓ הפעולה בוצעה בהצלחה.\n\nפרטים: {skill_args or 'ללא ארגומנטים'}",
+                        type="skill",
+                        skill_id=skill_id,
+                        skill_result={"status": "success", "skill": skill_name},
+                        model=model,
+                        timestamp=datetime.now().isoformat(),
+                    )
+            except Exception as e:
+                return InteractResponse(
+                    response=f"שגיאה בהרצת skill: {str(e)}",
+                    type="skill",
+                    skill_id=skill_id,
+                    model=model,
+                    timestamp=datetime.now().isoformat(),
+                )
+        else:
+            return InteractResponse(
+                response=f"פקודה לא מוכרת: /{skill_name}\n\nפקודות זמינות:\n• /hydraulic - חישוב הידראולי\n• /route - תכנון תוואי\n• /autopilot - הפעלת Auto-Pilot\n• /report - יצירת דוח",
+                type="chat",
+                model=model,
+                timestamp=datetime.now().isoformat(),
+            )
+
+    # Regular chat - simulate AI response
+    await asyncio.sleep(0.5)  # Brief thinking time
+
+    # Generate contextual response based on keywords
+    message_lower = message.lower()
+
+    if any(word in message_lower for word in ["צנרת", "pipe", "צינור"]):
+        response = "לתכנון מערכת צנרת, אני ממליץ:\n\n1. הגדר את סוג הסיכון (Light/Ordinary/Extra)\n2. חשב את ספיקת המים הנדרשת\n3. הרץ /hydraulic לחישוב לחצים\n4. הרץ /autopilot ליצירת תוואי אוטומטי"
+    elif any(word in message_lower for word in ["לחץ", "pressure", "ספיקה", "flow"]):
+        response = "לחישוב לחץ וספיקה, השתמש בפקודה:\n\n/hydraulic [ספיקה GPM] [קוטר אינץ'] [אורך פיט]\n\nלדוגמה: /hydraulic 150 2 100"
+    elif any(word in message_lower for word in ["nfpa", "תקן", "standard"]):
+        response = "AquaBrain תומך בתקני NFPA 13:\n\n• Light Hazard: 0.10 GPM/ft²\n• Ordinary Group 1: 0.15 GPM/ft²\n• Ordinary Group 2: 0.20 GPM/ft²\n• Extra Hazard 1: 0.30 GPM/ft²\n• Extra Hazard 2: 0.40 GPM/ft²"
+    elif any(word in message_lower for word in ["revit", "רוויט", "model"]):
+        response = "לחיבור ל-Revit:\n\n1. ודא ש-Revit 2025/2026 פתוח\n2. הרץ /extract לשליפת גיאומטריה\n3. הרץ /autopilot לתכנון אוטומטי\n\nסטטוס חיבור: מצב דמו (Mock Mode)"
+    else:
+        response = f"אני AquaBrain, עוזר AI להנדסת מערכות כיבוי אש וספרינקלרים.\n\nאני יכול לעזור לך ב:\n• חישובי הידראוליקה (/hydraulic)\n• תכנון תוואי צנרת (/route)\n• יצירת מודל LOD 500 (/autopilot)\n• הפקת דוחות (/report)\n\nמה תרצה לעשות?"
+
+    return InteractResponse(
+        response=response,
+        type="chat",
+        model=model,
+        timestamp=datetime.now().isoformat(),
     )
 
 

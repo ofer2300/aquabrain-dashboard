@@ -18,6 +18,7 @@ import {
   ChevronDown,
   Cpu
 } from 'lucide-react';
+import { useProjectContext, type RevitVersion as ContextRevitVersion } from '@/hooks/useProjectContext';
 
 // Process stages for the Auto-Pilot
 type ProcessStage =
@@ -159,18 +160,38 @@ interface ProjectCapsuleProps {
 }
 
 export function ProjectCapsule({ projectId: initialProjectId = '', projectName: initialProjectName = '' }: ProjectCapsuleProps) {
+  // V3.1: Use persistent context for project state (survives page navigation)
+  const {
+    projectId,
+    setProjectId,
+    projectName,
+    setProjectName,
+    notes,
+    setNotes,
+    revitVersion,
+    setRevitVersion,
+    lastRunId,
+    setLastRunId,
+    isHydrated,
+  } = useProjectContext();
+
+  // Local UI state (doesn't need persistence)
   const [stage, setStage] = useState<ProcessStage>('idle');
-  const [notes, setNotes] = useState('');
   const [result, setResult] = useState<RunStatusResponse | null>(null);
   const [progress, setProgress] = useState(0);
   const [runId, setRunId] = useState<string | null>(null);
   const [pollCount, setPollCount] = useState(0);
-  // V3.0: Revit Version Selection
-  const [revitVersion, setRevitVersion] = useState<RevitVersion>('auto');
   const [versionDropdownOpen, setVersionDropdownOpen] = useState(false);
-  // V3.1: Editable Project Info
-  const [projectId, setProjectId] = useState(initialProjectId);
-  const [projectName, setProjectName] = useState(initialProjectName);
+
+  // Initialize from props if context is empty (first load)
+  useEffect(() => {
+    if (isHydrated && !projectId && initialProjectId) {
+      setProjectId(initialProjectId);
+    }
+    if (isHydrated && !projectName && initialProjectName) {
+      setProjectName(initialProjectName);
+    }
+  }, [isHydrated, projectId, projectName, initialProjectId, initialProjectName, setProjectId, setProjectName]);
 
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const isProcessing = !['idle', 'completed', 'failed'].includes(stage);

@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { LanguageProvider } from "@/contexts/LanguageContext";
+import { ProjectProvider } from "@/hooks/useProjectContext";
+import { CommandBar } from "@/components/CommandBar";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -29,7 +31,14 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <LanguageProvider defaultLang="he">
-          {children}
+          <ProjectProvider>
+            {/* Main content with bottom padding for CommandBar */}
+            <div className="pb-16">
+              {children}
+            </div>
+            {/* Global Command Bar - appears on every page */}
+            <CommandBar />
+          </ProjectProvider>
         </LanguageProvider>
       </body>
     </html>

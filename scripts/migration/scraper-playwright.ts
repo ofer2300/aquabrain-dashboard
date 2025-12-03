@@ -183,21 +183,23 @@ async function main() {
   try {
     log('Launching Playwright Chromium...', 'info');
 
-    // Connect to existing Chrome or use Windows Chrome executable
-    const windowsChromePath = '/mnt/c/Program Files/Google/Chrome/Application/chrome.exe';
+    // Connect to Windows Chrome via CDP WebSocket
+    const cdpUrl = 'http://10.255.255.254:9222';
+    log(`Connecting to Chrome at ${cdpUrl}...`, 'info');
 
-    browser = await chromium.launch({
-      executablePath: windowsChromePath,
-      headless: false,  // Show browser window
-      args: ['--lang=he-IL', '--start-maximized'],
-    });
+    browser = await chromium.connectOverCDP(cdpUrl);
+    log('Connected to Chrome!', 'success');
 
-    const context = await browser.newContext({
+    // Get existing context or create new one
+    const contexts = browser.contexts();
+    const context = contexts.length > 0 ? contexts[0] : await browser.newContext({
       viewport: { width: 1920, height: 1080 },
       locale: 'he-IL',
     });
 
-    const page = await context.newPage();
+    // Get existing page or create new one
+    const pages = context.pages();
+    const page = pages.length > 0 ? pages[0] : await context.newPage();
     page.setDefaultTimeout(CONFIG.timeout);
     page.setDefaultNavigationTimeout(CONFIG.navigationTimeout);
 
