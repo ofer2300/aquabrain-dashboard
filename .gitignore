@@ -1,0 +1,82 @@
+# ============================================
+# AquaBrain Dashboard - Git Ignore
+# ============================================
+
+# === Dependencies ===
+node_modules/
+.pnp
+.pnp.js
+
+# === Python ===
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# === Build outputs ===
+.next/
+out/
+build/
+dist/
+*.egg-info/
+
+# === IDE ===
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# === Environment ===
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
+
+# === Logs ===
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+# === OS ===
+.DS_Store
+Thumbs.db
+
+# === Testing ===
+coverage/
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+
+# === Temp files ===
+*.tmp
+*.temp
+*.bak
+
+# === Secrets (never commit) ===
+credentials.json
+secrets.json
+*.pem
+*.key
+
+# === Lock files (optional - uncomment if needed) ===
+# package-lock.json
+# yarn.lock
+
+# === Project specific ===
+uploads/
+exports/
+*.rvt
+*.dwg
+*.dxf

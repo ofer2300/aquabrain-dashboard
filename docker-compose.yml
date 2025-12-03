@@ -1,0 +1,58 @@
+# AquaBrain Dashboard - Docker Compose Configuration
+# LOD 500 Engineering System
+
+version: "3.8"
+
+services:
+  # ============================================
+  # Backend Service - Python FastAPI
+  # ============================================
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: aquabrain-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - /app/venv  # Exclude venv from volume mount
+    environment:
+      - PYTHONUNBUFFERED=1
+      - ENVIRONMENT=development
+    networks:
+      - aquabrain-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # ============================================
+  # Frontend Service - Next.js
+  # ============================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: aquabrain-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=http://backend:8000
+    networks:
+      - aquabrain-network
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+# ============================================
+# Shared Network
+# ============================================
+networks:
+  aquabrain-network:
+    driver: bridge
+    name: aquabrain-network

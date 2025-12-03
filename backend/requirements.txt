@@ -1,0 +1,16 @@
+# AquaBrain Backend Dependencies
+# FastAPI Stack
+fastapi>=0.100.0
+uvicorn>=0.23.0
+pydantic>=2.0.0
+
+# Engineering Calculations
+numpy>=1.24.0
+pandas>=2.0.0
+scipy>=1.9.0
+
+# CAD Export
+ezdxf>=1.0.0
+
+# HTTP Client (for external APIs)
+httpx>=0.24.0

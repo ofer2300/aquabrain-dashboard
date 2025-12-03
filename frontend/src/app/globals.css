@@ -1,0 +1,174 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-surface text-text-primary antialiased;
+  background: radial-gradient(circle at 50% 0%, #1a1a2e 0%, #030305 100%);
+  direction: rtl;
+  overflow-x: hidden;
+}
+
+/* ============================================
+   GLASSMORPHISM CLASSES - Deep Glass UI
+   ============================================ */
+.glass-panel {
+  @apply backdrop-blur-xl bg-glass-gradient border border-white/10 shadow-glass-edge;
+  border-radius: 16px;
+}
+
+.glass-heavy {
+  @apply backdrop-blur-[40px] bg-gradient-to-b from-white/10 to-white/[0.02] border border-white/10 shadow-lg;
+  border-radius: 16px;
+}
+
+.glass-card {
+  backdrop-filter: blur(32px);
+  -webkit-backdrop-filter: blur(32px);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.02) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+}
+
+/* ============================================
+   NEON GLOWS
+   ============================================ */
+.glow-ai {
+  box-shadow: 0 0 30px rgba(189, 0, 255, 0.2);
+  border-color: rgba(189, 0, 255, 0.5);
+}
+
+.glow-success {
+  box-shadow: 0 0 20px rgba(0, 230, 118, 0.2);
+  border-color: rgba(0, 230, 118, 0.5);
+}
+
+.glow-error {
+  box-shadow: 0 0 20px rgba(255, 59, 48, 0.3);
+  border-color: rgba(255, 59, 48, 0.5);
+}
+
+.glow-warning {
+  box-shadow: 0 0 20px rgba(255, 159, 10, 0.3);
+  border-color: rgba(255, 159, 10, 0.5);
+}
+
+.glow-green {
+  box-shadow: 0 0 20px rgba(0, 230, 118, 0.3);
+}
+
+.glow-red {
+  box-shadow: 0 0 20px rgba(255, 59, 48, 0.3);
+}
+
+.glow-purple {
+  box-shadow: 0 0 20px rgba(189, 0, 255, 0.3);
+}
+
+/* ============================================
+   STATUS DOTS
+   ============================================ */
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.status-dot.live {
+  background: theme('colors.status.success');
+  animation: pulse-glow 2s infinite;
+}
+
+.status-dot.ai {
+  background: theme('colors.status.ai');
+  animation: pulse-ai 2s infinite;
+}
+
+.status-dot.error {
+  background: theme('colors.status.error');
+  animation: pulse-error 2s infinite;
+}
+
+/* ============================================
+   ANIMATIONS
+   ============================================ */
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(0, 230, 118, 0.7); }
+  50% { box-shadow: 0 0 0 8px rgba(0, 230, 118, 0); }
+}
+
+@keyframes pulse-ai {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(189, 0, 255, 0.7); }
+  50% { box-shadow: 0 0 0 8px rgba(189, 0, 255, 0); }
+}
+
+@keyframes pulse-error {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 59, 48, 0.7); }
+  50% { box-shadow: 0 0 0 8px rgba(255, 59, 48, 0); }
+}
+
+@keyframes scan-line {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+@keyframes breathing {
+  0%, 100% { opacity: 0.4; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.05); }
+}
+
+.animate-scan { animation: scan-line 2s ease-in-out infinite; }
+.animate-breathing { animation: breathing 2.5s ease-in-out infinite; }
+
+/* ============================================
+   STATE MACHINE
+   ============================================ */
+.state-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 12px;
+  transition: all 0.3s ease;
+}
+
+.state-step.active {
+  background: rgba(189, 0, 255, 0.2);
+  border: 1px solid rgba(189, 0, 255, 0.5);
+  color: theme('colors.status.ai');
+}
+
+.state-step.completed {
+  background: rgba(0, 230, 118, 0.2);
+  border: 1px solid rgba(0, 230, 118, 0.5);
+  color: theme('colors.status.success');
+}
+
+.state-step.pending {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.4);
+}
+
+/* ============================================
+   CUSTOM SCROLLBAR
+   ============================================ */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.25); }
+
+/* ============================================
+   UTILITIES
+   ============================================ */
+.text-gradient-ai {
+  background: linear-gradient(135deg, theme('colors.status.ai'), #00F0FF);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.glass {
+  @apply backdrop-blur-xl bg-white/5 border border-white/10;
+  border-radius: 12px;
+}
