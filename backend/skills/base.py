@@ -132,6 +132,7 @@ class SkillCategory(str, Enum):
     DATA_ANALYSIS = "data_analysis"
     REPORTING = "reporting"
     INTEGRATION = "integration"
+    RPA = "rpa"  # Robotic Process Automation / Web Agents
     CUSTOM = "custom"
 
 
