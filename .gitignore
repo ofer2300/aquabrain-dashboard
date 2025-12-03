@@ -80,3 +80,6 @@ exports/
 *.rvt
 *.dwg
 *.dxf
+# Database files
+*.db
+backend/broker/

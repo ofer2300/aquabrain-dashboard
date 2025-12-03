@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Rocket,
   Brain,
@@ -12,25 +12,30 @@ import {
   Box,
   Route,
   Droplets,
-  Hammer
+  Hammer,
+  Clock,
+  History
 } from 'lucide-react';
 
 // Process stages for the Auto-Pilot
 type ProcessStage =
   | 'idle'
-  | 'extracting'      // שואב תוכניות מ-Revit
-  | 'voxelizing'      // ממיר לרשת ווקסלים
-  | 'routing'         // מתכנן תוואי צנרת
-  | 'calculating'     // מחשב הידראוליקה
-  | 'generating'      // מייצר LOD 500
-  | 'validating'      // בודק תאימות
+  | 'queued'           // ממתין בתור
+  | 'initializing'     // מאתחל
+  | 'extracting'       // שואב תוכניות מ-Revit
+  | 'voxelizing'       // ממיר לרשת ווקסלים
+  | 'routing'          // מתכנן תוואי צנרת
+  | 'calculating'      // מחשב הידראוליקה
+  | 'validating'       // בודק תאימות
+  | 'generating'       // מייצר LOD 500
+  | 'signaling'        // קובע סטטוס רמזור
   | 'completed'
-  | 'error';
+  | 'failed';
 
 // Traffic Light status
 type TrafficLight = 'GREEN' | 'YELLOW' | 'RED' | null;
 
-// API Response Types (LOD 500 - Production Grade)
+// API Response Types (V2.0 - Async Architecture)
 interface TrafficLightMetrics {
   maxVelocity: number;
   pressureLoss: number;
@@ -68,26 +73,65 @@ interface HydraulicSummary {
   };
 }
 
-interface EngineeringResponse {
-  project_id: string;
+// Async Job Submission Response
+interface AsyncJobResponse {
+  run_id: string;
   status: string;
+  message: string;
+}
+
+// Status Polling Response
+interface RunStatusResponse {
+  id: string;
+  project_id: string;
+  status: 'QUEUED' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
+  current_stage: string;
+  progress_percent: number;
+  hazard_class: string;
+  notes: string;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  duration_seconds: number;
+  error_message: string | null;
+  metrics: TrafficLightMetrics;
   traffic_light: TrafficLightResult;
+  geometry_summary: { floors: number; total_area_sqm: number; obstruction_count: number; clash_count: number };
   routing_summary: RoutingSummary;
   hydraulic_summary: HydraulicSummary;
-  duration_seconds: number;
-  stages_completed: string[];
 }
 
 const STAGE_CONFIG: Record<ProcessStage, { label: string; labelHe: string; icon: React.ElementType }> = {
   idle: { label: 'Ready', labelHe: 'מוכן', icon: Rocket },
+  queued: { label: 'Queued', labelHe: 'ממתין בתור...', icon: Clock },
+  initializing: { label: 'Initializing', labelHe: 'מאתחל...', icon: Brain },
   extracting: { label: 'Extracting Plans', labelHe: 'שואב תוכניות...', icon: FileSearch },
   voxelizing: { label: 'Voxelizing Geometry', labelHe: 'מנתח גיאומטריה...', icon: Box },
   routing: { label: 'Planning Routes', labelHe: 'מתכנן תוואי צנרת...', icon: Route },
   calculating: { label: 'Hydraulic Calculation', labelHe: 'מבצע חישוב הידראולי...', icon: Droplets },
-  generating: { label: 'Generating LOD 500', labelHe: 'מייצר מודל LOD 500...', icon: Hammer },
   validating: { label: 'Validating NFPA 13', labelHe: 'מאמת תקן NFPA 13...', icon: CheckCircle2 },
+  generating: { label: 'Generating LOD 500', labelHe: 'מייצר מודל LOD 500...', icon: Hammer },
+  signaling: { label: 'Traffic Light', labelHe: 'קובע סטטוס רמזור...', icon: AlertTriangle },
   completed: { label: 'Completed', labelHe: 'הושלם', icon: CheckCircle2 },
-  error: { label: 'Error', labelHe: 'שגיאה', icon: AlertCircle },
+  failed: { label: 'Failed', labelHe: 'נכשל', icon: AlertCircle },
+};
+
+// Map backend stage names to frontend
+const mapBackendStage = (stage: string): ProcessStage => {
+  const stageMap: Record<string, ProcessStage> = {
+    'queued': 'queued',
+    'initializing': 'initializing',
+    'extracting': 'extracting',
+    'voxelizing': 'voxelizing',
+    'routing': 'routing',
+    'calculating': 'calculating',
+    'validating': 'validating',
+    'generating': 'generating',
+    'signaling': 'signaling',
+    'completed': 'completed',
+    'failed': 'failed',
+  };
+  return stageMap[stage] || 'idle';
 };
 
 interface ProjectCapsuleProps {
@@ -98,76 +142,124 @@ interface ProjectCapsuleProps {
 export function ProjectCapsule({ projectId = 'PRJ-500', projectName = 'מגדל אקווה' }: ProjectCapsuleProps) {
   const [stage, setStage] = useState<ProcessStage>('idle');
   const [notes, setNotes] = useState('');
-  const [result, setResult] = useState<EngineeringResponse | null>(null);
+  const [result, setResult] = useState<RunStatusResponse | null>(null);
   const [progress, setProgress] = useState(0);
+  const [runId, setRunId] = useState<string | null>(null);
+  const [pollCount, setPollCount] = useState(0);
 
-  const isProcessing = !['idle', 'completed', 'error'].includes(stage);
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const isProcessing = !['idle', 'completed', 'failed'].includes(stage);
+
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+      }
+    };
+  }, []);
+
+  // Poll for status updates
+  const pollStatus = useCallback(async (id: string) => {
+    try {
+      const response = await fetch(`http://localhost:8000/api/engineering/status/${id}`);
+
+      if (!response.ok) {
+        throw new Error('Failed to get status');
+      }
+
+      const data: RunStatusResponse = await response.json();
+
+      // Update UI state from backend
+      setProgress(data.progress_percent);
+      setStage(mapBackendStage(data.current_stage));
+      setPollCount(prev => prev + 1);
+
+      // Check if processing is complete
+      if (data.status === 'COMPLETED' || data.status === 'FAILED') {
+        // Stop polling
+        if (pollIntervalRef.current) {
+          clearInterval(pollIntervalRef.current);
+          pollIntervalRef.current = null;
+        }
+
+        // Update final result
+        setResult(data);
+        setStage(data.status === 'COMPLETED' ? 'completed' : 'failed');
+      }
+
+    } catch (error) {
+      console.error('Polling error:', error);
+      // Don't stop polling on transient errors, just log
+    }
+  }, []);
+
+  // Start polling when we have a runId
+  useEffect(() => {
+    if (runId && isProcessing) {
+      // Start polling every 1 second
+      pollIntervalRef.current = setInterval(() => {
+        pollStatus(runId);
+      }, 1000);
+
+      // Initial poll
+      pollStatus(runId);
+    }
+
+    return () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+      }
+    };
+  }, [runId, pollStatus]);
 
   const startProcess = async () => {
-    setStage('extracting');
+    setStage('queued');
     setProgress(0);
     setResult(null);
+    setRunId(null);
+    setPollCount(0);
 
     try {
-      // Stage 1: Extract geometry from Revit
-      setStage('extracting');
-      setProgress(10);
-      await simulateStage(1500);
-
-      // Stage 2: Voxelize geometry
-      setStage('voxelizing');
-      setProgress(25);
-      await simulateStage(1200);
-
-      // Stage 3: Route planning (A* algorithm)
-      setStage('routing');
-      setProgress(45);
-      await simulateStage(2000);
-
-      // Stage 4: Hydraulic calculation
-      setStage('calculating');
-      setProgress(65);
-
-      // Real API call to our backend
+      // Submit async job
       const response = await fetch('http://localhost:8000/api/engineering/start-process', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           project_id: projectId,
           notes: notes,
-          hazard_class: 'ordinary_1'
+          hazard_class: 'ordinary_1',
+          async_mode: true,  // Use async mode
         })
       });
 
       if (!response.ok) {
-        throw new Error('Process failed');
+        throw new Error('Failed to queue job');
       }
 
-      const data: EngineeringResponse = await response.json();
-      setProgress(80);
+      const data: AsyncJobResponse = await response.json();
 
-      // Stage 5: Generate LOD 500
-      setStage('generating');
-      setProgress(90);
-      await simulateStage(1500);
-
-      // Stage 6: Validate
-      setStage('validating');
-      setProgress(95);
-      await simulateStage(800);
-
-      // Complete - store full response
-      setStage('completed');
-      setProgress(100);
-      setResult(data);
+      // Store run ID and start polling
+      setRunId(data.run_id);
+      setStage('queued');
 
     } catch (error) {
       console.error('Process error:', error);
-      setStage('error');
-      // Create error response in correct format
+      setStage('failed');
       setResult({
+        id: '',
         project_id: projectId,
-        status: 'error',
+        status: 'FAILED',
+        current_stage: 'failed',
+        progress_percent: 0,
+        hazard_class: 'light',
+        notes: '',
+        created_at: new Date().toISOString(),
+        started_at: null,
+        completed_at: null,
+        duration_seconds: 0,
+        error_message: error instanceof Error ? error.message : 'Unknown error',
+        metrics: { maxVelocity: 0, pressureLoss: 0, clashCount: 0, nfpaCompliant: false },
         traffic_light: {
           status: 'RED',
           message: 'שגיאה בתהליך',
@@ -176,18 +268,15 @@ export function ProjectCapsule({ projectId = 'PRJ-500', projectName = 'מגדל 
           confidence: 0,
           metrics: { maxVelocity: 0, pressureLoss: 0, clashCount: 0, nfpaCompliant: false }
         },
+        geometry_summary: { floors: 0, total_area_sqm: 0, obstruction_count: 0, clash_count: 0 },
         routing_summary: { total_segments: 0, total_length_m: 0, total_sprinklers: 0, branch_count: 0 },
         hydraulic_summary: {
           main_line: { pressure_loss_psi: 0, velocity_fps: 0, actual_diameter: 0, compliant: false },
           totals: { total_pressure_loss_psi: 0, max_velocity_fps: 0, all_compliant: false }
         },
-        duration_seconds: 0,
-        stages_completed: []
       });
     }
   };
-
-  const simulateStage = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
   const getTrafficLightColor = (status: TrafficLight) => {
     switch (status) {
@@ -195,15 +284,6 @@ export function ProjectCapsule({ projectId = 'PRJ-500', projectName = 'מגדל 
       case 'YELLOW': return 'bg-status-warning';
       case 'RED': return 'bg-status-error';
       default: return 'bg-white/20';
-    }
-  };
-
-  const getTrafficLightGlow = (status: TrafficLight) => {
-    switch (status) {
-      case 'GREEN': return 'glow-success';
-      case 'YELLOW': return 'glow-warning';
-      case 'RED': return 'glow-error';
-      default: return '';
     }
   };
 
@@ -219,7 +299,7 @@ export function ProjectCapsule({ projectId = 'PRJ-500', projectName = 'מגדל 
           </div>
           <div>
             <h2 className="text-xl font-bold text-white">התנעת תכנון אוטומטי</h2>
-            <p className="text-text-secondary text-sm">Auto-Pilot | LOD 500 Generation</p>
+            <p className="text-text-secondary text-sm">Auto-Pilot V2.0 | Async Engine</p>
           </div>
         </div>
 
@@ -242,6 +322,18 @@ export function ProjectCapsule({ projectId = 'PRJ-500', projectName = 'מגדל 
           <p className="font-mono text-status-ai">{projectId}</p>
         </div>
       </div>
+
+      {/* Run ID Badge */}
+      {runId && (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-status-ai/10 border border-status-ai/30">
+          <History className="w-4 h-4 text-status-ai" />
+          <span className="text-xs text-text-secondary">Run ID:</span>
+          <span className="font-mono text-xs text-status-ai">{runId}</span>
+          {isProcessing && (
+            <span className="text-xs text-white/50 ml-auto">Poll #{pollCount}</span>
+          )}
+        </div>
+      )}
 
       {/* Notes Input */}
       <div className="space-y-2">
@@ -267,7 +359,7 @@ export function ProjectCapsule({ projectId = 'PRJ-500', projectName = 'מגדל 
           {/* Progress Bar */}
           <div className="h-2 bg-white/10 rounded-full overflow-hidden">
             <div
-              className="h-full bg-gradient-to-r from-status-ai to-cyan-400 transition-all duration-500"
+              className="h-full bg-gradient-to-r from-status-ai to-cyan-400 transition-all duration-300"
               style={{ width: `${progress}%` }}
             />
           </div>
@@ -279,15 +371,21 @@ export function ProjectCapsule({ projectId = 'PRJ-500', projectName = 'מגדל 
               <p className="text-white font-medium">{STAGE_CONFIG[stage].labelHe}</p>
               <p className="text-xs text-text-secondary">{STAGE_CONFIG[stage].label}</p>
             </div>
-            <Loader2 className="w-5 h-5 text-status-ai animate-spin" />
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-mono text-status-ai">{progress}%</span>
+              <Loader2 className="w-5 h-5 text-status-ai animate-spin" />
+            </div>
           </div>
 
           {/* Stage Timeline */}
           <div className="flex justify-between px-2">
-            {(['extracting', 'voxelizing', 'routing', 'calculating', 'generating', 'validating'] as ProcessStage[]).map((s, i) => {
+            {(['extracting', 'voxelizing', 'routing', 'calculating', 'validating', 'generating'] as ProcessStage[]).map((s, i) => {
               const Icon = STAGE_CONFIG[s].icon;
+              const stageOrder = ['queued', 'initializing', 'extracting', 'voxelizing', 'routing', 'calculating', 'validating', 'generating', 'signaling'];
+              const currentIndex = stageOrder.indexOf(stage);
+              const targetIndex = stageOrder.indexOf(s);
               const isActive = s === stage;
-              const isComplete = ['extracting', 'voxelizing', 'routing', 'calculating', 'generating', 'validating'].indexOf(stage) > i;
+              const isComplete = targetIndex < currentIndex;
 
               return (
                 <div key={s} className="flex flex-col items-center gap-1">
@@ -307,83 +405,90 @@ export function ProjectCapsule({ projectId = 'PRJ-500', projectName = 'מגדל 
       )}
 
       {/* Result Section */}
-      {result && stage === 'completed' && (
+      {result && (stage === 'completed' || stage === 'failed') && (
         <div className={`
           p-5 rounded-xl border transition-all
-          ${result.traffic_light.status === 'GREEN' ? 'bg-status-success/10 border-status-success/30 glow-success' : ''}
-          ${result.traffic_light.status === 'YELLOW' ? 'bg-status-warning/10 border-status-warning/30 glow-warning' : ''}
-          ${result.traffic_light.status === 'RED' ? 'bg-status-error/10 border-status-error/30 glow-error' : ''}
+          ${result.traffic_light?.status === 'GREEN' ? 'bg-status-success/10 border-status-success/30 glow-success' : ''}
+          ${result.traffic_light?.status === 'YELLOW' ? 'bg-status-warning/10 border-status-warning/30 glow-warning' : ''}
+          ${result.traffic_light?.status === 'RED' ? 'bg-status-error/10 border-status-error/30 glow-error' : ''}
         `}>
           <div className="flex items-center gap-4 mb-4">
             <div className={`
               w-12 h-12 rounded-full flex items-center justify-center
-              ${getTrafficLightColor(result.traffic_light.status)}
+              ${getTrafficLightColor(result.traffic_light?.status)}
             `}>
-              {result.traffic_light.status === 'GREEN' && <CheckCircle2 className="w-6 h-6 text-white" />}
-              {result.traffic_light.status === 'YELLOW' && <AlertTriangle className="w-6 h-6 text-white" />}
-              {result.traffic_light.status === 'RED' && <AlertCircle className="w-6 h-6 text-white" />}
+              {result.traffic_light?.status === 'GREEN' && <CheckCircle2 className="w-6 h-6 text-white" />}
+              {result.traffic_light?.status === 'YELLOW' && <AlertTriangle className="w-6 h-6 text-white" />}
+              {result.traffic_light?.status === 'RED' && <AlertCircle className="w-6 h-6 text-white" />}
             </div>
             <div>
               <p className={`text-lg font-bold ${
-                result.traffic_light.status === 'GREEN' ? 'text-status-success' :
-                result.traffic_light.status === 'YELLOW' ? 'text-status-warning' : 'text-status-error'
+                result.traffic_light?.status === 'GREEN' ? 'text-status-success' :
+                result.traffic_light?.status === 'YELLOW' ? 'text-status-warning' : 'text-status-error'
               }`}>
-                {result.traffic_light.message}
+                {result.traffic_light?.message || (stage === 'failed' ? 'שגיאה בתהליך' : 'הושלם')}
               </p>
               <p className="text-sm text-text-secondary">
-                {result.traffic_light.status === 'GREEN' ? 'התכנון אושר - ניתן להמשיך' :
-                 result.traffic_light.status === 'YELLOW' ? 'נדרשת בדיקה נוספת' : 'נדרשת התערבות'}
+                {result.traffic_light?.status === 'GREEN' ? 'התכנון אושר - ניתן להמשיך' :
+                 result.traffic_light?.status === 'YELLOW' ? 'נדרשת בדיקה נוספת' :
+                 result.error_message || 'נדרשת התערבות'}
               </p>
             </div>
           </div>
 
           {/* Details */}
-          <div className="space-y-2">
-            {result.traffic_light.details.map((detail, i) => (
-              <div key={i} className="flex items-center gap-2 text-sm text-white/70">
-                <CheckCircle2 className="w-4 h-4 text-status-success" />
-                {detail}
-              </div>
-            ))}
-          </div>
+          {result.traffic_light?.details && (
+            <div className="space-y-2">
+              {result.traffic_light.details.map((detail, i) => (
+                <div key={i} className="flex items-center gap-2 text-sm text-white/70">
+                  <CheckCircle2 className="w-4 h-4 text-status-success" />
+                  {detail}
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Metrics - Using Real API Data */}
-          <div className="grid grid-cols-4 gap-3 mt-4 pt-4 border-t border-white/10">
-            <div className="text-center">
-              <p className="text-2xl font-bold text-white">{result.routing_summary.total_segments}</p>
-              <p className="text-xs text-text-secondary">קטעי צנרת</p>
+          {result.routing_summary && (
+            <div className="grid grid-cols-4 gap-3 mt-4 pt-4 border-t border-white/10">
+              <div className="text-center">
+                <p className="text-2xl font-bold text-white">{result.routing_summary.total_segments}</p>
+                <p className="text-xs text-text-secondary">קטעי צנרת</p>
+              </div>
+              <div className="text-center">
+                <p className="text-2xl font-bold text-white">{result.routing_summary.total_length_m?.toFixed(1) || '0'}</p>
+                <p className="text-xs text-text-secondary">מטר אורך</p>
+              </div>
+              <div className="text-center">
+                <p className="text-2xl font-bold text-white">{result.traffic_light?.metrics?.pressureLoss?.toFixed(1) || '0'}</p>
+                <p className="text-xs text-text-secondary">PSI אובדן</p>
+              </div>
+              <div className="text-center">
+                <p className={`text-2xl font-bold ${(result.traffic_light?.metrics?.maxVelocity || 0) < 20 ? 'text-status-success' : 'text-status-warning'}`}>
+                  {result.traffic_light?.metrics?.maxVelocity?.toFixed(1) || '0'}
+                </p>
+                <p className="text-xs text-text-secondary">fps מהירות</p>
+              </div>
             </div>
-            <div className="text-center">
-              <p className="text-2xl font-bold text-white">{result.routing_summary.total_length_m.toFixed(1)}</p>
-              <p className="text-xs text-text-secondary">מטר אורך</p>
-            </div>
-            <div className="text-center">
-              <p className="text-2xl font-bold text-white">{result.traffic_light.metrics.pressureLoss.toFixed(1)}</p>
-              <p className="text-xs text-text-secondary">PSI אובדן</p>
-            </div>
-            <div className="text-center">
-              <p className={`text-2xl font-bold ${result.traffic_light.metrics.maxVelocity < 20 ? 'text-status-success' : 'text-status-warning'}`}>
-                {result.traffic_light.metrics.maxVelocity.toFixed(1)}
-              </p>
-              <p className="text-xs text-text-secondary">fps מהירות</p>
-            </div>
-          </div>
+          )}
 
           {/* Extra Row: Sprinklers & Duration */}
-          <div className="grid grid-cols-3 gap-3 mt-3 pt-3 border-t border-white/10">
-            <div className="text-center">
-              <p className="text-xl font-bold text-status-ai">{result.routing_summary.total_sprinklers}</p>
-              <p className="text-xs text-text-secondary">ספרינקלרים</p>
+          {result.routing_summary && (
+            <div className="grid grid-cols-3 gap-3 mt-3 pt-3 border-t border-white/10">
+              <div className="text-center">
+                <p className="text-xl font-bold text-status-ai">{result.routing_summary.total_sprinklers}</p>
+                <p className="text-xs text-text-secondary">ספרינקלרים</p>
+              </div>
+              <div className="text-center">
+                <p className="text-xl font-bold text-white">{result.traffic_light?.metrics?.clashCount || 0}</p>
+                <p className="text-xs text-text-secondary">התנגשויות</p>
+              </div>
+              <div className="text-center">
+                <p className="text-xl font-bold text-cyan-400">{result.duration_seconds?.toFixed(1) || '0'}s</p>
+                <p className="text-xs text-text-secondary">זמן עיבוד</p>
+              </div>
             </div>
-            <div className="text-center">
-              <p className="text-xl font-bold text-white">{result.traffic_light.metrics.clashCount}</p>
-              <p className="text-xs text-text-secondary">התנגשויות</p>
-            </div>
-            <div className="text-center">
-              <p className="text-xl font-bold text-cyan-400">{result.duration_seconds.toFixed(1)}s</p>
-              <p className="text-xs text-text-secondary">זמן עיבוד</p>
-            </div>
-          </div>
+          )}
         </div>
       )}
 
@@ -403,7 +508,7 @@ export function ProjectCapsule({ projectId = 'PRJ-500', projectName = 'מגדל 
         {isProcessing ? (
           <>
             <Loader2 className="w-6 h-6 animate-spin" />
-            מעבד...
+            מעבד... {progress}%
           </>
         ) : (
           <>
@@ -415,7 +520,7 @@ export function ProjectCapsule({ projectId = 'PRJ-500', projectName = 'מגדל 
 
       {/* Footer Note */}
       <p className="text-xs text-center text-white/30">
-        Powered by AquaBrain AI Engine | NFPA 13 Compliant | LOD 500
+        Powered by AquaBrain AI Engine V2.0 | Async Architecture | NFPA 13 Compliant
       </p>
     </div>
   );

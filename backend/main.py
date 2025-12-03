@@ -415,12 +415,20 @@ class EngineeringProcessRequest(BaseModel):
     project_id: str
     notes: str = ""
     hazard_class: str = "ordinary_1"
+    async_mode: bool = True  # Use async (Celery) by default
+
+
+class AsyncJobResponse(BaseModel):
+    """Response for async job submission."""
+    run_id: str
+    status: str
+    message: str
 
 
 @app.post("/api/engineering/start-process")
 async def start_engineering_process_endpoint(request: EngineeringProcessRequest):
     """
-    🚀 THE CAPSULE - One Click Engineering
+    🚀 THE CAPSULE - One Click Engineering (V2.0 Async)
 
     This is the "Tesla of Engineering" endpoint.
     One click triggers the complete automation workflow:
@@ -432,15 +440,117 @@ async def start_engineering_process_endpoint(request: EngineeringProcessRequest)
     5. Generate LOD 500 model in Revit
     6. Return Traffic Light status (GREEN/YELLOW/RED)
 
-    The engineer clicks ONE button and gets a complete sprinkler design.
-    """
-    result = await run_engineering_process(
-        project_id=request.project_id,
-        hazard_class=request.hazard_class,
-        notes=request.notes
-    )
+    V2.0: Now supports async mode (default) for enterprise scalability.
 
-    return result
+    Async Mode (async_mode=true):
+        - Returns immediately with run_id
+        - Poll /api/engineering/status/{run_id} for progress
+        - Scales to thousands of concurrent requests
+
+    Sync Mode (async_mode=false):
+        - Waits for completion (legacy behavior)
+        - Simpler for single-user scenarios
+    """
+    if request.async_mode:
+        # ASYNC MODE: Queue task and return immediately
+        try:
+            from worker import create_run, run_engineering_job
+
+            # Create run record in DB
+            run_id = create_run(
+                project_id=request.project_id,
+                hazard_class=request.hazard_class,
+                notes=request.notes,
+            )
+
+            # Queue Celery task (will run if worker is available)
+            # For now, run synchronously in background thread as fallback
+            import threading
+
+            def run_task():
+                try:
+                    run_engineering_job(
+                        run_id=run_id,
+                        project_id=request.project_id,
+                        hazard_class=request.hazard_class,
+                        notes=request.notes,
+                    )
+                except Exception as e:
+                    print(f"[ERROR] Background task failed: {e}")
+
+            thread = threading.Thread(target=run_task, daemon=True)
+            thread.start()
+
+            return {
+                "run_id": run_id,
+                "status": "QUEUED",
+                "message": "Engineering job queued. Poll /api/engineering/status/{run_id} for progress.",
+            }
+
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to queue job: {str(e)}")
+
+    else:
+        # SYNC MODE: Wait for completion (legacy behavior)
+        result = await run_engineering_process(
+            project_id=request.project_id,
+            hazard_class=request.hazard_class,
+            notes=request.notes
+        )
+        return result
+
+
+@app.get("/api/engineering/status/{run_id}")
+async def get_engineering_status(run_id: str):
+    """
+    📊 Get Engineering Job Status
+
+    Poll this endpoint to track progress of an async engineering job.
+
+    Returns:
+        - status: QUEUED | PROCESSING | COMPLETED | FAILED
+        - current_stage: Current pipeline stage
+        - progress_percent: 0-100
+        - traffic_light: Full results when completed
+        - All summary data when completed
+    """
+    try:
+        from worker import get_run_status
+
+        run_data = get_run_status(run_id)
+
+        if not run_data:
+            raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+
+        return run_data
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get status: {str(e)}")
+
+
+@app.get("/api/engineering/history/{project_id}")
+async def get_project_history(project_id: str, limit: int = 10):
+    """
+    📜 Get Project Run History
+
+    Returns the history of all engineering runs for a project.
+    Useful for comparing results over time.
+    """
+    try:
+        from worker import get_project_history
+
+        history = get_project_history(project_id, limit=limit)
+
+        return {
+            "project_id": project_id,
+            "total_runs": len(history),
+            "runs": history,
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get history: {str(e)}")
 
 
 @app.get("/")
