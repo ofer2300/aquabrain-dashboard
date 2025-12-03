@@ -158,7 +158,8 @@ class TestTrafficLightLogic:
         request = {
             "project_id": "TEST-GREEN",
             "hazard_class": "light",
-            "notes": ""
+            "notes": "",
+            "async_mode": False,  # Sync mode for testing
         }
 
         response = client.post("/api/engineering/start-process", json=request)
@@ -173,7 +174,8 @@ class TestTrafficLightLogic:
         request = {
             "project_id": "TEST-DETAILS",
             "hazard_class": "light",
-            "notes": ""
+            "notes": "",
+            "async_mode": False,  # Sync mode for testing
         }
 
         response = client.post("/api/engineering/start-process", json=request)

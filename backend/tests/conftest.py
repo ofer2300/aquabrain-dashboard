@@ -39,9 +39,10 @@ def sample_hydraulic_input():
 
 @pytest.fixture
 def sample_engineering_request():
-    """Sample engineering process request."""
+    """Sample engineering process request (sync mode for testing)."""
     return {
         "project_id": "TEST-001",
         "hazard_class": "light",
-        "notes": "Test run"
+        "notes": "Test run",
+        "async_mode": False,  # Use sync mode for testing
     }

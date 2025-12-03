@@ -158,7 +158,7 @@ interface ProjectCapsuleProps {
   projectName?: string;
 }
 
-export function ProjectCapsule({ projectId = 'PRJ-500', projectName = 'מגדל אקווה' }: ProjectCapsuleProps) {
+export function ProjectCapsule({ projectId: initialProjectId = '', projectName: initialProjectName = '' }: ProjectCapsuleProps) {
   const [stage, setStage] = useState<ProcessStage>('idle');
   const [notes, setNotes] = useState('');
   const [result, setResult] = useState<RunStatusResponse | null>(null);
@@ -168,6 +168,9 @@ export function ProjectCapsule({ projectId = 'PRJ-500', projectName = 'מגדל 
   // V3.0: Revit Version Selection
   const [revitVersion, setRevitVersion] = useState<RevitVersion>('auto');
   const [versionDropdownOpen, setVersionDropdownOpen] = useState(false);
+  // V3.1: Editable Project Info
+  const [projectId, setProjectId] = useState(initialProjectId);
+  const [projectName, setProjectName] = useState(initialProjectName);
 
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const isProcessing = !['idle', 'completed', 'failed'].includes(stage);
@@ -334,15 +337,37 @@ export function ProjectCapsule({ projectId = 'PRJ-500', projectName = 'מגדל 
         </div>
       </div>
 
-      {/* Project Info */}
-      <div className="glass rounded-xl p-4 flex items-center justify-between">
-        <div>
-          <p className="text-xs text-text-secondary">פרויקט נבחר</p>
-          <p className="text-lg font-bold text-white">{projectName}</p>
-        </div>
-        <div className="text-left">
-          <p className="text-xs text-text-secondary">מזהה</p>
-          <p className="font-mono text-status-ai">{projectId}</p>
+      {/* Project Info - Editable */}
+      <div className="glass rounded-xl p-4 space-y-3">
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="text-xs text-text-secondary block mb-1">שם הפרויקט</label>
+            <input
+              type="text"
+              value={projectName}
+              onChange={(e) => setProjectName(e.target.value)}
+              disabled={isProcessing}
+              placeholder="לדוגמה: מגדל המאירי"
+              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white
+                       placeholder:text-white/30 text-sm
+                       focus:outline-none focus:border-status-ai/50 focus:ring-1 focus:ring-status-ai/30
+                       disabled:opacity-50"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-text-secondary block mb-1">מזהה פרויקט</label>
+            <input
+              type="text"
+              value={projectId}
+              onChange={(e) => setProjectId(e.target.value)}
+              disabled={isProcessing}
+              placeholder="לדוגמה: HAMEIRI-TOWER-01"
+              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-status-ai font-mono
+                       placeholder:text-white/30 text-sm
+                       focus:outline-none focus:border-status-ai/50 focus:ring-1 focus:ring-status-ai/30
+                       disabled:opacity-50"
+            />
+          </div>
         </div>
       </div>
 

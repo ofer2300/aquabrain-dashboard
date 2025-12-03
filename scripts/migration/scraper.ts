@@ -39,18 +39,29 @@ const CONFIG = {
   screenshotOnError: true,
 };
 
-// Hebrew to English header mapping
+// Hebrew to English header mapping - EXACT from Admiral screenshots
 const HEADER_MAP: Record<string, string> = {
-  // Projects
+  // ============== CONTRACT BALANCE SCREEN (ContractsBudgetList.aspx) ==============
+  'מנהל פרויקט': 'projectManager',
+  'מס\'': 'projectId',
+  'מס': 'projectId',
   'פרויקט': 'projectName',
+  'לקוח': 'clientName',
+  'בסיס התקשרות': 'contractBase',
+  'סכום': 'contractAmount',
+  'שולם': 'totalPaid',
+  'יתרה': 'balance',
+  'אחוז התקדמות': 'progressPercentage',
+  '% התקדמות': 'progressPercentage',
+  'חשבון הבא': 'nextInvoiceMilestone',
+  'רווח': 'profitability',
+  'רווחיות': 'profitability',
+
+  // ============== PROJECTS ==============
   'שם פרויקט': 'projectName',
   'מספר פרויקט': 'projectId',
-  'לקוח': 'clientName',
   'שם לקוח': 'clientName',
-  'סכום': 'totalAmount',
   'סה"כ': 'totalAmount',
-  'יתרה': 'balance',
-  'שולם': 'paid',
   'סטטוס': 'status',
   'מצב': 'status',
   'תאריך': 'date',
@@ -58,7 +69,7 @@ const HEADER_MAP: Record<string, string> = {
   'תאריך סגירה': 'closeDate',
   'תאריך עדכון': 'updateDate',
 
-  // Invoices
+  // ============== INVOICES ==============
   'חשבונית': 'invoiceNumber',
   'מספר חשבונית': 'invoiceNumber',
   'סכום חשבונית': 'invoiceAmount',
@@ -67,29 +78,68 @@ const HEADER_MAP: Record<string, string> = {
   'סוג': 'type',
   'הערות': 'notes',
 
-  // Contracts
+  // ============== CONTRACTS ==============
   'חוזה': 'contractName',
   'מספר חוזה': 'contractId',
   'ערך חוזה': 'contractValue',
   'תאריך התחלה': 'startDate',
   'תאריך סיום': 'endDate',
 
-  // Common
+  // ============== COMMON FIELDS ==============
   'כתובת': 'address',
   'טלפון': 'phone',
   'אימייל': 'email',
   'איש קשר': 'contactPerson',
-  'מנהל פרויקט': 'projectManager',
-  'אחוז התקדמות': 'progressPercent',
+  'תיאור': 'description',
+  'עיר': 'city',
+  'ח.פ': 'companyId',
+  'עוסק מורשה': 'vatNumber',
 };
 
-// Navigation tabs to scrape
+// Navigation tabs to scrape - with direct URLs where available
 const NAV_TABS = [
-  { name: 'projects', hebrewSelector: 'פרויקטים', englishKey: 'projects' },
-  { name: 'invoices', hebrewSelector: 'חשבונות', englishKey: 'invoices' },
-  { name: 'contracts', hebrewSelector: 'חוזים', englishKey: 'contracts' },
-  { name: 'clients', hebrewSelector: 'לקוחות', englishKey: 'clients' },
-  { name: 'payments', hebrewSelector: 'תשלומים', englishKey: 'payments' },
+  {
+    name: 'contractsBalance',
+    hebrewSelector: 'יתרות חוזים',
+    englishKey: 'contractsBalance',
+    directUrl: '/Projects/ContractsBudgetList.aspx',  // PRIMARY TARGET
+    priority: 1,
+  },
+  {
+    name: 'projects',
+    hebrewSelector: 'פרויקטים',
+    englishKey: 'projects',
+    directUrl: '/Projects/ProjectsList.aspx',
+    priority: 2,
+  },
+  {
+    name: 'invoices',
+    hebrewSelector: 'חשבונות',
+    englishKey: 'invoices',
+    directUrl: '/Invoices/InvoicesList.aspx',
+    priority: 3,
+  },
+  {
+    name: 'contracts',
+    hebrewSelector: 'חוזים',
+    englishKey: 'contracts',
+    directUrl: '/Contracts/ContractsList.aspx',
+    priority: 4,
+  },
+  {
+    name: 'clients',
+    hebrewSelector: 'לקוחות',
+    englishKey: 'clients',
+    directUrl: '/Clients/ClientsList.aspx',
+    priority: 5,
+  },
+  {
+    name: 'payments',
+    hebrewSelector: 'תשלומים',
+    englishKey: 'payments',
+    directUrl: '/Payments/PaymentsList.aspx',
+    priority: 6,
+  },
 ];
 
 // =============================================================================
@@ -103,6 +153,7 @@ interface Credentials {
 }
 
 interface ScrapedData {
+  contractsBalance: Record<string, any>[];  // PRIMARY TARGET
   projects: Record<string, any>[];
   invoices: Record<string, any>[];
   contracts: Record<string, any>[];
@@ -113,6 +164,8 @@ interface ScrapedData {
     totalRecords: number;
     source: string;
     version: string;
+    pagesScraped: number;
+    lastSavedPage: number;
   };
 }
 
@@ -326,9 +379,12 @@ class AdmiralScraper {
   private browser: Browser | null = null;
   private page: Page | null = null;
   private data: ScrapedData;
+  private rawDumpPath: string;
+  private totalPagesScraped: number = 0;
 
   constructor() {
     this.data = {
+      contractsBalance: [],  // PRIMARY TARGET
       projects: [],
       invoices: [],
       contracts: [],
@@ -338,30 +394,80 @@ class AdmiralScraper {
         scrapedAt: new Date().toISOString(),
         totalRecords: 0,
         source: 'Admiral Legacy System',
-        version: '1.0.0',
+        version: '2.0.0',
+        pagesScraped: 0,
+        lastSavedPage: 0,
       },
     };
+    this.rawDumpPath = path.join(CONFIG.outputDir, 'raw_data_dump.json');
+  }
+
+  /**
+   * Save progress incrementally after each page (crash recovery)
+   */
+  private saveIncremental(tabName: string, pageNum: number, records: Record<string, any>[]): void {
+    try {
+      // Append to raw dump file
+      const incrementalData = {
+        timestamp: new Date().toISOString(),
+        tab: tabName,
+        page: pageNum,
+        recordCount: records.length,
+        records: records,
+      };
+
+      // Append mode - create file with array wrapper if new
+      let existingData: any[] = [];
+      if (fs.existsSync(this.rawDumpPath)) {
+        try {
+          const content = fs.readFileSync(this.rawDumpPath, 'utf-8');
+          existingData = JSON.parse(content);
+        } catch {
+          existingData = [];
+        }
+      }
+
+      existingData.push(incrementalData);
+      fs.writeFileSync(this.rawDumpPath, JSON.stringify(existingData, null, 2), 'utf-8');
+
+      this.totalPagesScraped++;
+      log(`[CHECKPOINT] Saved page ${pageNum} of ${tabName} (${records.length} records) → raw_data_dump.json`, 'success');
+    } catch (error: any) {
+      log(`Failed to save incremental: ${error.message}`, 'error');
+    }
   }
 
   async initialize(): Promise<void> {
     log('Launching Puppeteer browser...', 'info');
 
-    this.browser = await puppeteer.launch({
-      headless: 'new',
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--disable-gpu',
-        '--window-size=1920,1080',
-        '--lang=he-IL',
-      ],
-      defaultViewport: {
-        width: 1920,
-        height: 1080,
-      },
-    });
+    // Check if connecting to remote Chrome (user started Chrome with --remote-debugging-port=9222)
+    const remoteUrl = process.env.CHROME_REMOTE_URL || 'http://localhost:9222';
+
+    if (process.env.USE_REMOTE_CHROME === 'true') {
+      log(`Connecting to remote Chrome at ${remoteUrl}...`, 'info');
+      this.browser = await puppeteer.connect({
+        browserURL: remoteUrl,
+      });
+    } else {
+      // Use system-installed Chromium or bundled Chrome
+      this.browser = await puppeteer.launch({
+        headless: true,
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-accelerated-2d-canvas',
+          '--disable-gpu',
+          '--window-size=1920,1080',
+          '--lang=he-IL',
+          '--single-process',  // Better for WSL2
+        ],
+        defaultViewport: {
+          width: 1920,
+          height: 1080,
+        },
+      });
+    }
 
     this.page = await this.browser.newPage();
 
@@ -516,62 +622,85 @@ class AdmiralScraper {
     const records: Record<string, any>[] = [];
     let currentPage = 1;
     let hasNextPage = true;
+    let totalPages = 1;
 
-    log(`Starting scrape of tab: ${tabConfig.name} (${tabConfig.hebrewSelector})`, 'info');
+    log(`\n${'='.repeat(60)}`, 'info');
+    log(`SCRAPING TAB: ${tabConfig.name.toUpperCase()} (${tabConfig.hebrewSelector})`, 'info');
+    log(`Priority: ${tabConfig.priority} | URL: ${tabConfig.directUrl || 'nav-click'}`, 'info');
+    log(`${'='.repeat(60)}`, 'info');
 
     try {
-      // Try to navigate to the tab
-      const tabSelectors = [
-        `a:contains("${tabConfig.hebrewSelector}")`,
-        `[title*="${tabConfig.hebrewSelector}"]`,
-        `[aria-label*="${tabConfig.hebrewSelector}"]`,
-        `.nav-link:contains("${tabConfig.hebrewSelector}")`,
-        `li:contains("${tabConfig.hebrewSelector}") a`,
-      ];
+      // METHOD 1: Try direct URL navigation first (more reliable for ASP.NET)
+      if (tabConfig.directUrl) {
+        const fullUrl = `${CONFIG.baseUrl}${tabConfig.directUrl}`;
+        log(`Navigating directly to: ${fullUrl}`, 'info');
 
-      let tabClicked = false;
-      for (const selector of tabSelectors) {
         try {
-          // Use evaluate to find element with Hebrew text
-          const found = await this.page.evaluate((text) => {
-            const elements = document.querySelectorAll('a, button, li, span, div');
-            for (const el of elements) {
-              if (el.textContent?.includes(text)) {
-                (el as HTMLElement).click();
-                return true;
-              }
-            }
-            return false;
-          }, tabConfig.hebrewSelector);
-
-          if (found) {
-            tabClicked = true;
-            log(`Clicked tab: ${tabConfig.hebrewSelector}`, 'info');
-            break;
-          }
-        } catch {
-          continue;
+          await this.page.goto(fullUrl, {
+            waitUntil: 'networkidle2',
+            timeout: CONFIG.navigationTimeout,
+          });
+          log(`Direct URL navigation successful`, 'success');
+        } catch (navError: any) {
+          log(`Direct URL failed: ${navError.message}, trying menu click...`, 'warning');
         }
       }
 
-      if (!tabClicked) {
-        log(`Could not find tab: ${tabConfig.hebrewSelector}, skipping...`, 'warning');
-        return records;
+      // METHOD 2: Fallback to menu click
+      const currentUrl = this.page.url();
+      if (!currentUrl.includes(tabConfig.directUrl?.replace(/^\//, '') || 'never-match')) {
+        log(`Attempting menu navigation for: ${tabConfig.hebrewSelector}`, 'info');
+
+        const found = await this.page.evaluate((text) => {
+          const elements = document.querySelectorAll('a, button, li, span, div, td');
+          for (const el of elements) {
+            if (el.textContent?.trim() === text || el.textContent?.includes(text)) {
+              (el as HTMLElement).click();
+              return true;
+            }
+          }
+          return false;
+        }, tabConfig.hebrewSelector);
+
+        if (!found) {
+          log(`Could not find tab: ${tabConfig.hebrewSelector}, skipping...`, 'warning');
+          await this.page.screenshot({
+            path: path.join(CONFIG.outputDir, `nav_failed_${tabConfig.name}.png`),
+          });
+          return records;
+        }
+
+        await this.page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }).catch(() => null);
       }
 
       // Wait for table to load
       await this.page.waitForTimeout(CONFIG.pageLoadDelay);
-      await this.page.waitForSelector('table', { timeout: 10000 }).catch(() => null);
+      await this.page.waitForSelector('table', { timeout: 15000 }).catch(() => null);
 
+      // Try to detect total pages from pagination info (e.g., "עמוד 1 מתוך 5")
+      totalPages = await this.detectTotalPages();
+      log(`Detected ${totalPages} total pages`, 'info');
+
+      // Take screenshot of first page
+      await this.page.screenshot({
+        path: path.join(CONFIG.outputDir, `${tabConfig.name}_page_1.png`),
+      });
+
+      // PAGINATION LOOP
       while (hasNextPage) {
+        log(`Scraping row data from page ${currentPage}/${totalPages}...`, 'progress');
+
         // Scrape current page
         const pageRecords = await this.scrapeTable();
         records.push(...pageRecords);
 
+        // INCREMENTAL SAVE - crash recovery checkpoint
+        this.saveIncremental(tabConfig.name, currentPage, pageRecords);
+
         logProgress({
           currentTab: tabConfig.name,
           currentPage,
-          totalPages: currentPage, // We don't know total yet
+          totalPages,
           recordsScraped: records.length,
         });
 
@@ -581,22 +710,69 @@ class AdmiralScraper {
         if (hasNextPage) {
           currentPage++;
           await this.page.waitForTimeout(CONFIG.pageLoadDelay);
+
+          // Wait for ASP.NET postback to complete
+          await this.page.waitForNetworkIdle({ timeout: 10000 }).catch(() => null);
+
+          // Screenshot every 5th page for verification
+          if (currentPage % 5 === 0) {
+            await this.page.screenshot({
+              path: path.join(CONFIG.outputDir, `${tabConfig.name}_page_${currentPage}.png`),
+            });
+          }
         }
       }
 
-      log(`Completed scraping ${tabConfig.name}: ${records.length} records`, 'success');
+      log(`\n✅ COMPLETED: ${tabConfig.name} - ${records.length} total records from ${currentPage} pages`, 'success');
 
     } catch (error: any) {
-      log(`Error scraping tab ${tabConfig.name}: ${error.message}`, 'error');
+      log(`ERROR scraping tab ${tabConfig.name}: ${error.message}`, 'error');
 
       if (CONFIG.screenshotOnError && this.page) {
         await this.page.screenshot({
-          path: path.join(CONFIG.outputDir, `error_${tabConfig.name}.png`),
+          path: path.join(CONFIG.outputDir, `error_${tabConfig.name}_page_${currentPage}.png`),
         });
       }
+
+      // Still return what we have - don't lose scraped data
+      log(`Returning ${records.length} records scraped before error`, 'warning');
     }
 
     return records;
+  }
+
+  /**
+   * Detect total pages from pagination info (e.g., "עמוד 1 מתוך 5")
+   */
+  private async detectTotalPages(): Promise<number> {
+    if (!this.page) return 1;
+
+    try {
+      const totalPages = await this.page.evaluate(() => {
+        const pageText = document.body.innerText;
+
+        // Pattern: "עמוד X מתוך Y" or "Page X of Y"
+        const hebrewMatch = pageText.match(/עמוד\s*\d+\s*מתוך\s*(\d+)/);
+        if (hebrewMatch) return parseInt(hebrewMatch[1], 10);
+
+        const englishMatch = pageText.match(/Page\s*\d+\s*of\s*(\d+)/i);
+        if (englishMatch) return parseInt(englishMatch[1], 10);
+
+        // Look for numbered pagination links
+        const pageLinks = document.querySelectorAll('.pagination a, .pager a, [class*="page"] a');
+        let maxPage = 1;
+        pageLinks.forEach((link) => {
+          const num = parseInt(link.textContent || '', 10);
+          if (!isNaN(num) && num > maxPage) maxPage = num;
+        });
+
+        return maxPage;
+      });
+
+      return totalPages || 1;
+    } catch {
+      return 1;
+    }
   }
 
   async scrapeTable(): Promise<Record<string, any>[]> {
@@ -734,25 +910,39 @@ class AdmiralScraper {
   }
 
   async scrapeAll(): Promise<void> {
-    log('Starting full data extraction...', 'info');
+    console.log('\n' + '█'.repeat(60));
+    console.log(`${colors.green}${colors.bright}   🚀 YOLO MODE ACTIVATED - FULL DATA EXTRACTION${colors.reset}`);
+    console.log('█'.repeat(60) + '\n');
 
-    for (const tab of NAV_TABS) {
+    // Sort tabs by priority
+    const sortedTabs = [...NAV_TABS].sort((a, b) => a.priority - b.priority);
+
+    for (const tab of sortedTabs) {
       const records = await this.scrapeTab(tab);
       const key = tab.englishKey as keyof Omit<ScrapedData, 'metadata'>;
       this.data[key] = records;
+
+      log(`Cumulative progress: ${this.getTotalRecords()} records`, 'progress');
     }
 
     // Update metadata
-    this.data.metadata.totalRecords =
+    this.data.metadata.totalRecords = this.getTotalRecords();
+    this.data.metadata.scrapedAt = new Date().toISOString();
+    this.data.metadata.pagesScraped = this.totalPagesScraped;
+
+    log(`\n🎉 TOTAL RECORDS SCRAPED: ${this.data.metadata.totalRecords}`, 'success');
+    log(`📄 Total pages processed: ${this.totalPagesScraped}`, 'success');
+  }
+
+  private getTotalRecords(): number {
+    return (
+      this.data.contractsBalance.length +
       this.data.projects.length +
       this.data.invoices.length +
       this.data.contracts.length +
       this.data.clients.length +
-      this.data.payments.length;
-
-    this.data.metadata.scrapedAt = new Date().toISOString();
-
-    log(`Total records scraped: ${this.data.metadata.totalRecords}`, 'success');
+      this.data.payments.length
+    );
   }
 
   async saveData(): Promise<void> {
@@ -768,18 +958,21 @@ class AdmiralScraper {
     log(`Data saved to: ${outputPath}`, 'success');
 
     // Print summary
-    console.log('\n' + '='.repeat(60));
-    console.log(`${colors.green}${colors.bright}DATA RESCUE MISSION COMPLETE${colors.reset}`);
-    console.log('='.repeat(60));
-    console.log(`Projects:   ${this.data.projects.length} records`);
-    console.log(`Invoices:   ${this.data.invoices.length} records`);
-    console.log(`Contracts:  ${this.data.contracts.length} records`);
-    console.log(`Clients:    ${this.data.clients.length} records`);
-    console.log(`Payments:   ${this.data.payments.length} records`);
+    console.log('\n' + '█'.repeat(60));
+    console.log(`${colors.green}${colors.bright}   🎯 DATA RESCUE MISSION COMPLETE${colors.reset}`);
+    console.log('█'.repeat(60));
+    console.log(`${colors.cyan}Contracts Balance (PRIMARY):  ${this.data.contractsBalance.length} records${colors.reset}`);
+    console.log(`Projects:                     ${this.data.projects.length} records`);
+    console.log(`Invoices:                     ${this.data.invoices.length} records`);
+    console.log(`Contracts:                    ${this.data.contracts.length} records`);
+    console.log(`Clients:                      ${this.data.clients.length} records`);
+    console.log(`Payments:                     ${this.data.payments.length} records`);
     console.log('-'.repeat(60));
-    console.log(`TOTAL:      ${this.data.metadata.totalRecords} records`);
-    console.log(`Output:     ${outputPath}`);
-    console.log('='.repeat(60) + '\n');
+    console.log(`${colors.green}${colors.bright}TOTAL:                        ${this.data.metadata.totalRecords} records${colors.reset}`);
+    console.log(`Pages Scraped:                ${this.data.metadata.pagesScraped} pages`);
+    console.log(`${colors.yellow}Output:                       ${outputPath}${colors.reset}`);
+    console.log(`${colors.yellow}Raw Dump:                     ${this.rawDumpPath}${colors.reset}`);
+    console.log('█'.repeat(60) + '\n');
   }
 
   async close(): Promise<void> {
