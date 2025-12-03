@@ -249,7 +249,9 @@ export function ProjectInitiation({ onProjectStarted }: ProjectInitiationProps) 
                 <CheckCircle2 className="w-5 h-5 text-status-success" />
               )}
               {file.status === 'error' && (
-                <AlertCircle className="w-5 h-5 text-status-error" title={file.error} />
+                <span title={file.error}>
+                  <AlertCircle className="w-5 h-5 text-status-error" />
+                </span>
               )}
               {!ignited && file.status !== 'uploading' && (
                 <button

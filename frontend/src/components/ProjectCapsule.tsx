@@ -16,7 +16,10 @@ import {
   Clock,
   History,
   ChevronDown,
-  Cpu
+  Cpu,
+  CloudOff,
+  CloudCheck,
+  Database
 } from 'lucide-react';
 import { useProjectContext, type RevitVersion as ContextRevitVersion } from '@/hooks/useProjectContext';
 
@@ -346,15 +349,37 @@ export function ProjectCapsule({ projectId: initialProjectId = '', projectName: 
           </div>
           <div>
             <h2 className="text-xl font-bold text-white">התנעת תכנון אוטומטי</h2>
-            <p className="text-text-secondary text-sm">Auto-Pilot V2.0 | Async Engine</p>
+            <p className="text-text-secondary text-sm">Auto-Pilot V3.1 | Total Memory</p>
           </div>
         </div>
 
-        {/* Traffic Light */}
-        <div className="flex gap-2">
-          <div className={`w-6 h-6 rounded-full transition-all ${result?.traffic_light?.status === 'RED' ? 'bg-status-error glow-error' : 'bg-white/10'}`} />
-          <div className={`w-6 h-6 rounded-full transition-all ${result?.traffic_light?.status === 'YELLOW' ? 'bg-status-warning glow-warning' : 'bg-white/10'}`} />
-          <div className={`w-6 h-6 rounded-full transition-all ${result?.traffic_light?.status === 'GREEN' ? 'bg-status-success glow-success' : 'bg-white/10'}`} />
+        <div className="flex items-center gap-4">
+          {/* Memory Indicator - Shows sync status */}
+          <div className={`
+            flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all
+            ${isHydrated
+              ? 'bg-status-success/10 border border-status-success/30'
+              : 'bg-status-warning/10 border border-status-warning/30'}
+          `}>
+            {isHydrated ? (
+              <>
+                <Database className="w-4 h-4 text-status-success animate-pulse" />
+                <span className="text-xs text-status-success font-medium">זיכרון פעיל</span>
+              </>
+            ) : (
+              <>
+                <CloudOff className="w-4 h-4 text-status-warning" />
+                <span className="text-xs text-status-warning font-medium">טוען...</span>
+              </>
+            )}
+          </div>
+
+          {/* Traffic Light */}
+          <div className="flex gap-2">
+            <div className={`w-6 h-6 rounded-full transition-all ${result?.traffic_light?.status === 'RED' ? 'bg-status-error glow-error' : 'bg-white/10'}`} />
+            <div className={`w-6 h-6 rounded-full transition-all ${result?.traffic_light?.status === 'YELLOW' ? 'bg-status-warning glow-warning' : 'bg-white/10'}`} />
+            <div className={`w-6 h-6 rounded-full transition-all ${result?.traffic_light?.status === 'GREEN' ? 'bg-status-success glow-success' : 'bg-white/10'}`} />
+          </div>
         </div>
       </div>
 
@@ -669,7 +694,7 @@ export function ProjectCapsule({ projectId: initialProjectId = '', projectName: 
 
       {/* Footer Note */}
       <p className="text-xs text-center text-white/30">
-        Powered by AquaBrain AI Engine V3.0 | Multi-Version Revit | NFPA 13 Compliant
+        Powered by AquaBrain AI Engine V3.1 | Total Memory | Command Center | NFPA 13
       </p>
     </div>
   );
