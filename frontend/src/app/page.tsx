@@ -1,7 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import { DashboardShell } from "@/components/DashboardShell";
 import { SmartResolutionCard } from "@/components/SmartResolutionCard";
+import { SkillWizardModal } from "@/components/SkillWizardModal";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -9,10 +11,35 @@ import {
   Zap,
   TrendingUp,
   Clock,
-  Activity
+  Activity,
+  Plus,
+  Droplets,
+  Building2,
+  FileBarChart,
+  Cog,
+  Wand2,
 } from "lucide-react";
 
+// Built-in skills data
+const BUILTIN_SKILLS = [
+  { id: 'builtin_hydraulic', name: 'חישוב הידראולי', icon: 'Droplets', color: '#00E676' },
+  { id: 'builtin_revit_extract', name: 'שליפת Revit', icon: 'Building2', color: '#4FACFE' },
+  { id: 'builtin_report_gen', name: 'יצירת דוחות', icon: 'FileBarChart', color: '#BD00FF' },
+];
+
 export default function Home() {
+  const [isWizardOpen, setIsWizardOpen] = useState(false);
+  const [customSkills, setCustomSkills] = useState<Array<{id: string; name: string; icon: string; color: string}>>([]);
+
+  const handleSkillCreated = (skill: any) => {
+    setCustomSkills(prev => [...prev, {
+      id: skill.skill_id,
+      name: skill.name,
+      icon: skill.icon,
+      color: skill.color,
+    }]);
+  };
+
   // נתוני דוגמה לפתרון התנגשות
   const sampleResolution = {
     id: "CLH-1247",
@@ -176,8 +203,95 @@ export default function Home() {
             </div>
           </div>
         </section>
+
+        {/* ===== SKILL FACTORY ===== */}
+        <section className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Wand2 className="w-5 h-5 text-purple-400" />
+              <h2 className="text-xl font-bold">Skill Factory</h2>
+              <span className="text-xs text-white/40 glass rounded-full px-3 py-1">AI Powered</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-5 gap-4">
+            {/* Built-in Skills */}
+            {BUILTIN_SKILLS.map((skill) => (
+              <SkillCard key={skill.id} skill={skill} />
+            ))}
+
+            {/* Custom Skills */}
+            {customSkills.map((skill) => (
+              <SkillCard key={skill.id} skill={skill} isCustom />
+            ))}
+
+            {/* Create New Skill Card */}
+            <button
+              onClick={() => setIsWizardOpen(true)}
+              className="glass-heavy rounded-2xl p-5 hover:glow-ai transition-all duration-300 group border-2 border-dashed border-white/20 hover:border-purple-500/50 flex flex-col items-center justify-center gap-3 min-h-[140px]"
+            >
+              <div className="w-12 h-12 rounded-xl bg-purple-500/20 flex items-center justify-center group-hover:scale-110 transition-transform">
+                <Plus className="w-6 h-6 text-purple-400" />
+              </div>
+              <span className="text-sm text-white/60 group-hover:text-purple-300 transition-colors">
+                צור Skill חדש
+              </span>
+            </button>
+          </div>
+        </section>
       </div>
+
+      {/* Skill Wizard Modal */}
+      <SkillWizardModal
+        isOpen={isWizardOpen}
+        onClose={() => setIsWizardOpen(false)}
+        onSkillCreated={handleSkillCreated}
+      />
     </DashboardShell>
+  );
+}
+
+/* =============================================
+   SKILL CARD COMPONENT
+   ============================================= */
+
+interface SkillCardProps {
+  skill: { id: string; name: string; icon: string; color: string };
+  isCustom?: boolean;
+}
+
+function SkillCard({ skill, isCustom }: SkillCardProps) {
+  const IconComponent = () => {
+    switch (skill.icon) {
+      case 'Droplets': return <Droplets className="w-6 h-6" />;
+      case 'Building2': return <Building2 className="w-6 h-6" />;
+      case 'FileBarChart': return <FileBarChart className="w-6 h-6" />;
+      default: return <Cog className="w-6 h-6" />;
+    }
+  };
+
+  return (
+    <div
+      className="glass-heavy rounded-2xl p-5 hover:scale-105 transition-all duration-300 cursor-pointer group"
+      style={{ boxShadow: `0 0 20px ${skill.color}20` }}
+    >
+      <div className="flex flex-col items-center gap-3">
+        <div
+          className="w-12 h-12 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"
+          style={{ backgroundColor: `${skill.color}30` }}
+        >
+          <span style={{ color: skill.color }}>
+            <IconComponent />
+          </span>
+        </div>
+        <span className="text-sm text-white/80 text-center">{skill.name}</span>
+        {isCustom && (
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300">
+            Custom
+          </span>
+        )}
+      </div>
+    </div>
   );
 }
 

@@ -1,13 +1,14 @@
 #!/bin/bash
 #
-# AquaBrain V2.0 - PLATINUM Edition
+# AquaBrain V3.0 - UNIVERSAL ORCHESTRATOR Edition
 # One-Click Launch Script
 #
 # This script starts all components of the AquaBrain system:
 # 1. Redis Server (message broker)
 # 2. Celery Worker (async task processor)
-# 3. FastAPI Backend (API server)
-# 4. Next.js Frontend (dashboard)
+# 3. Flower (Celery monitoring - optional)
+# 4. FastAPI Backend (API server)
+# 5. Next.js Frontend (dashboard)
 #
 # Usage: ./start_aquabrain.sh
 #
@@ -29,10 +30,10 @@ BACKEND_DIR="$SCRIPT_DIR/backend"
 FRONTEND_DIR="$SCRIPT_DIR/frontend"
 
 echo -e "${CYAN}"
-echo "======================================"
-echo "   AquaBrain V2.0 - PLATINUM Edition"
-echo "   Autonomous Engineering Platform"
-echo "======================================"
+echo "============================================"
+echo "   AquaBrain V3.0 - UNIVERSAL ORCHESTRATOR"
+echo "   One Endpoint to Rule Them All"
+echo "============================================"
 echo -e "${NC}"
 
 # Function to check if a port is in use
@@ -63,6 +64,9 @@ cleanup() {
     fi
     if [ ! -z "$CELERY_PID" ]; then
         kill $CELERY_PID 2>/dev/null || true
+    fi
+    if [ ! -z "$FLOWER_PID" ]; then
+        kill $FLOWER_PID 2>/dev/null || true
     fi
     if [ ! -z "$BACKEND_PID" ]; then
         kill $BACKEND_PID 2>/dev/null || true
@@ -98,7 +102,7 @@ fi
 # ============================================
 # STEP 2: Celery Worker
 # ============================================
-echo -e "\n${BLUE}[2/4] Starting Celery Worker...${NC}"
+echo -e "\n${BLUE}[2/5] Starting Celery Worker...${NC}"
 
 cd "$BACKEND_DIR"
 
@@ -112,19 +116,40 @@ else
     pip install -r requirements.txt
 fi
 
-# Start Celery worker in background
+# Start Celery worker in background (using celery_app.py)
 if command -v redis-server &> /dev/null; then
-    celery -A worker worker --loglevel=info --concurrency=2 &
+    celery -A celery_app worker --loglevel=info --concurrency=2 -Q default,engineering,skills &
     CELERY_PID=$!
     echo -e "${GREEN}Celery Worker started (PID: $CELERY_PID)${NC}"
+    echo -e "${CYAN}Queues: default, engineering, skills${NC}"
 else
     echo -e "${YELLOW}Celery skipped (no Redis). Using thread-based fallback.${NC}"
 fi
 
 # ============================================
-# STEP 3: FastAPI Backend
+# STEP 3: Flower (Celery Monitoring)
 # ============================================
-echo -e "\n${BLUE}[3/4] Starting FastAPI Backend...${NC}"
+echo -e "\n${BLUE}[3/5] Starting Flower Monitor...${NC}"
+
+if command -v redis-server &> /dev/null; then
+    if pip show flower &> /dev/null; then
+        kill_port 5555
+        celery -A celery_app flower --port=5555 &
+        FLOWER_PID=$!
+        echo -e "${GREEN}Flower Monitor started (PID: $FLOWER_PID)${NC}"
+        echo -e "${CYAN}Dashboard: http://localhost:5555${NC}"
+    else
+        echo -e "${YELLOW}Flower not installed. Skipping monitoring.${NC}"
+        echo -e "${YELLOW}Install with: pip install flower${NC}"
+    fi
+else
+    echo -e "${YELLOW}Flower skipped (no Redis).${NC}"
+fi
+
+# ============================================
+# STEP 4: FastAPI Backend
+# ============================================
+echo -e "\n${BLUE}[4/5] Starting FastAPI Backend...${NC}"
 
 kill_port 8000
 
@@ -144,9 +169,9 @@ else
 fi
 
 # ============================================
-# STEP 4: Next.js Frontend
+# STEP 5: Next.js Frontend
 # ============================================
-echo -e "\n${BLUE}[4/4] Starting Next.js Frontend...${NC}"
+echo -e "\n${BLUE}[5/5] Starting Next.js Frontend...${NC}"
 
 cd "$FRONTEND_DIR"
 
@@ -168,20 +193,30 @@ echo -e "${CYAN}Dashboard: http://localhost:3000${NC}"
 # System Ready
 # ============================================
 echo -e "\n${GREEN}"
-echo "======================================"
-echo "   AquaBrain V2.0 is LIVE!"
-echo "======================================"
+echo "============================================"
+echo "   AquaBrain V3.0 - UNIVERSAL ORCHESTRATOR"
+echo "              is LIVE!"
+echo "============================================"
 echo -e "${NC}"
-echo -e "${CYAN}Frontend:${NC}  http://localhost:3000"
-echo -e "${CYAN}Backend:${NC}   http://localhost:8000"
-echo -e "${CYAN}API Docs:${NC}  http://localhost:8000/docs"
-echo -e "${CYAN}Health:${NC}    http://localhost:8000/api/health"
+echo -e "${CYAN}Frontend:${NC}    http://localhost:3000"
+echo -e "${CYAN}Backend:${NC}     http://localhost:8000"
+echo -e "${CYAN}API Docs:${NC}    http://localhost:8000/docs"
+echo -e "${CYAN}Orchestrator:${NC} http://localhost:8000/api/orchestrator/skills"
+echo -e "${CYAN}Flower:${NC}      http://localhost:5555 (if Redis enabled)"
 echo ""
 echo -e "${PURPLE}Architecture:${NC}"
+echo "  - Universal Trigger: One Endpoint to Rule Them All"
+echo "  - Skill Factory: LLM-Powered Skill Generation"
 echo "  - Async Engine: Celery + Redis"
-echo "  - Database: SQLite (project history)"
+echo "  - Database: SQLite (audit trail)"
 echo "  - Frontend: Next.js 15 + React 19"
 echo "  - Backend: FastAPI + Pydantic"
+echo ""
+echo -e "${PURPLE}API Endpoints:${NC}"
+echo "  POST /api/orchestrator/trigger  - Execute any skill"
+echo "  GET  /api/orchestrator/skills   - List all skills"
+echo "  GET  /api/orchestrator/tasks/{id} - Track execution"
+echo "  POST /api/factory/generate      - Create new skill"
 echo ""
 echo -e "${YELLOW}Press Ctrl+C to stop all services${NC}"
 echo ""

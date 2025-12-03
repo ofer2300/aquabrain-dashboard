@@ -1,24 +1,46 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+/* ============================================
+   CUSTOM CSS VARIABLES
+   ============================================ */
+:root {
+  --color-surface: #030305;
+  --color-surface-glass: rgba(20, 20, 20, 0.6);
+  --color-status-success: #00E676;
+  --color-status-error: #FF3B30;
+  --color-status-warning: #FF9F0A;
+  --color-status-ai: #BD00FF;
+  --color-status-live: #FF3B30;
+  --color-text-primary: #FFFFFF;
+  --color-text-secondary: rgba(255, 255, 255, 0.6);
+}
 
 body {
-  @apply bg-surface text-text-primary antialiased;
   background: radial-gradient(circle at 50% 0%, #1a1a2e 0%, #030305 100%);
+  color: var(--color-text-primary);
   direction: rtl;
   overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
 }
 
 /* ============================================
    GLASSMORPHISM CLASSES - Deep Glass UI
    ============================================ */
 .glass-panel {
-  @apply backdrop-blur-xl bg-glass-gradient border border-white/10 shadow-glass-edge;
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.01) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.1);
   border-radius: 16px;
 }
 
 .glass-heavy {
-  @apply backdrop-blur-[40px] bg-gradient-to-b from-white/10 to-white/[0.02] border border-white/10 shadow-lg;
+  backdrop-filter: blur(40px);
+  -webkit-backdrop-filter: blur(40px);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.02) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
   border-radius: 16px;
 }
 
@@ -28,6 +50,14 @@ body {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.02) 100%);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 16px;
+}
+
+.glass {
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
 }
 
 /* ============================================
@@ -75,17 +105,17 @@ body {
 }
 
 .status-dot.live {
-  background: theme('colors.status.success');
+  background: var(--color-status-success);
   animation: pulse-glow 2s infinite;
 }
 
 .status-dot.ai {
-  background: theme('colors.status.ai');
+  background: var(--color-status-ai);
   animation: pulse-ai 2s infinite;
 }
 
 .status-dot.error {
-  background: theme('colors.status.error');
+  background: var(--color-status-error);
   animation: pulse-error 2s infinite;
 }
 
@@ -135,13 +165,13 @@ body {
 .state-step.active {
   background: rgba(189, 0, 255, 0.2);
   border: 1px solid rgba(189, 0, 255, 0.5);
-  color: theme('colors.status.ai');
+  color: var(--color-status-ai);
 }
 
 .state-step.completed {
   background: rgba(0, 230, 118, 0.2);
   border: 1px solid rgba(0, 230, 118, 0.5);
-  color: theme('colors.status.success');
+  color: var(--color-status-success);
 }
 
 .state-step.pending {
@@ -162,13 +192,23 @@ body {
    UTILITIES
    ============================================ */
 .text-gradient-ai {
-  background: linear-gradient(135deg, theme('colors.status.ai'), #00F0FF);
+  background: linear-gradient(135deg, var(--color-status-ai), #00F0FF);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
-.glass {
-  @apply backdrop-blur-xl bg-white/5 border border-white/10;
-  border-radius: 12px;
+/* ============================================
+   TAILWIND V4 THEME OVERRIDES
+   ============================================ */
+@theme {
+  --color-surface: #030305;
+  --color-surface-glass: rgba(20, 20, 20, 0.6);
+  --color-status-success: #00E676;
+  --color-status-error: #FF3B30;
+  --color-status-warning: #FF9F0A;
+  --color-status-ai: #BD00FF;
+  --color-status-live: #FF3B30;
+  --color-text-primary: #FFFFFF;
+  --color-text-secondary: rgba(255, 255, 255, 0.6);
 }

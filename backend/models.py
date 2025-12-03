@@ -114,6 +114,103 @@ class ProjectHistory(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class SkillExecution(Base):
+    """
+    Universal Skill Execution Audit Trail.
+
+    Tracks every skill execution through the Universal Orchestrator.
+    Provides the "Traceability" required for engineering liability.
+    """
+    __tablename__ = "skill_executions"
+
+    id = Column(String(50), primary_key=True, index=True)
+    skill_id = Column(String(100), nullable=False, index=True)
+    project_id = Column(String(100), nullable=True, index=True)
+    user_id = Column(String(100), nullable=True, index=True)
+
+    # Status tracking
+    status = Column(String(20), default="queued")  # queued, validating, running, success, failed, cancelled, timeout
+    current_stage = Column(String(50), default="queued")
+    progress_percent = Column(Integer, default=0)
+
+    # Input/Output (stored as JSON)
+    input_params_json = Column(Text, default="{}")
+    result_data_json = Column(Text, nullable=True)
+
+    # Artifacts (stored as JSON array)
+    artifacts_json = Column(Text, default="[]")
+
+    # Timing
+    created_at = Column(DateTime, default=datetime.utcnow)
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    execution_time_ms = Column(Integer, default=0)
+
+    # Error tracking
+    error_message = Column(Text, nullable=True)
+    error_traceback = Column(Text, nullable=True)
+
+    # Metadata (stored as JSON)
+    metadata_json = Column(Text, default="{}")
+
+    # Parent task (for chained executions)
+    parent_task_id = Column(String(50), nullable=True, index=True)
+
+    def set_input_params(self, params: dict):
+        """Store input parameters as JSON."""
+        self.input_params_json = json.dumps(params)
+
+    def get_input_params(self) -> dict:
+        """Retrieve input parameters from JSON."""
+        return json.loads(self.input_params_json) if self.input_params_json else {}
+
+    def set_result_data(self, data: dict):
+        """Store result data as JSON."""
+        self.result_data_json = json.dumps(data)
+
+    def get_result_data(self) -> dict:
+        """Retrieve result data from JSON."""
+        return json.loads(self.result_data_json) if self.result_data_json else {}
+
+    def set_artifacts(self, artifacts: list):
+        """Store artifacts as JSON."""
+        self.artifacts_json = json.dumps(artifacts)
+
+    def get_artifacts(self) -> list:
+        """Retrieve artifacts from JSON."""
+        return json.loads(self.artifacts_json) if self.artifacts_json else []
+
+    def set_metadata(self, metadata: dict):
+        """Store metadata as JSON."""
+        self.metadata_json = json.dumps(metadata)
+
+    def get_metadata(self) -> dict:
+        """Retrieve metadata from JSON."""
+        return json.loads(self.metadata_json) if self.metadata_json else {}
+
+    def to_dict(self) -> dict:
+        """Convert to dictionary for API response."""
+        return {
+            "id": self.id,
+            "skill_id": self.skill_id,
+            "project_id": self.project_id,
+            "user_id": self.user_id,
+            "status": self.status,
+            "current_stage": self.current_stage,
+            "progress_percent": self.progress_percent,
+            "input_params": self.get_input_params(),
+            "result_data": self.get_result_data(),
+            "artifacts": self.get_artifacts(),
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "execution_time_ms": self.execution_time_ms,
+            "error_message": self.error_message,
+            "metadata": self.get_metadata(),
+            "parent_task_id": self.parent_task_id,
+        }
+
+
 # Create tables
 def init_db():
     """Initialize the database tables."""

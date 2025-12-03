@@ -138,6 +138,7 @@ def run_engineering_job(
     project_id: str,
     hazard_class: str = "ordinary_1",
     notes: str = "",
+    revit_version: str = "auto",
 ) -> Dict[str, Any]:
     """
     Async Celery task for the engineering pipeline.

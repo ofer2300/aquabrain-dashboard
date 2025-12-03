@@ -104,6 +104,10 @@ PYREVIT_CLI = "pyrevit"
 MOCK_MODE = True  # Set to False when Revit is available
 MOCK_MODE_AUTO = True  # Auto-enable mock if bridge fails
 
+# Multi-version support (V3.0)
+SUPPORTED_REVIT_VERSIONS = ["2024", "2025", "2026", "auto"]
+DEFAULT_REVIT_VERSION = "auto"  # Auto-detect by default
+
 
 def _get_powershell_path() -> str:
     """Get the correct PowerShell path for WSL."""
@@ -115,25 +119,43 @@ def _get_powershell_path() -> str:
 def run_revit_command(
     command_type: BridgeCommand,
     payload: Dict[str, Any],
-    timeout: int = 60
+    timeout: int = 60,
+    target_version: str = "auto"
 ) -> BridgeResult:
     """
     Execute a command on Revit from WSL via the bridge.
     Falls back to mock mode if bridge is unavailable.
+
+    V3.0: Multi-version support
+    Args:
+        command_type: The bridge command to execute
+        payload: Data payload for the command
+        timeout: Command timeout in seconds
+        target_version: Revit version to target ("2024", "2025", "2026", or "auto")
     """
+    # Validate version
+    if target_version not in SUPPORTED_REVIT_VERSIONS:
+        target_version = DEFAULT_REVIT_VERSION
+
     if MOCK_MODE:
-        return _mock_command(command_type, payload)
+        result = _mock_command(command_type, payload)
+        # Add version info to mock response
+        if result.data:
+            result.data["target_version"] = target_version
+            result.data["connected_version"] = "mock"
+        return result
 
     json_payload = json.dumps(payload)
     ps_cmd = _get_powershell_path()
 
+    # V3.0: Include --version argument in command
     cmd = [
         ps_cmd,
         "-Command",
-        f"python '{REVIT_WORKER_SCRIPT}' --action {command_type.value} --data '{json_payload}'"
+        f"python '{REVIT_WORKER_SCRIPT}' --version {target_version} --action {command_type.value} --data '{json_payload}'"
     ]
 
-    print(f"[Bridge] {command_type.value}")
+    print(f"[Bridge] {command_type.value} -> Revit {target_version}")
     print(f"   Payload: {payload}")
 
     try:
@@ -496,8 +518,20 @@ def check_bridge_connection() -> BridgeResult:
     return BridgeResult(success=False, error="Bridge not available")
 
 
-def extract_geometry(project_id: str, element_types: list = None) -> BridgeResult:
-    """Extract geometry from Revit model."""
+def extract_geometry(
+    project_id: str,
+    element_types: list = None,
+    target_version: str = "auto"
+) -> BridgeResult:
+    """
+    Extract geometry from Revit model.
+
+    V3.0: Multi-version support
+    Args:
+        project_id: Project identifier
+        element_types: List of element types to extract
+        target_version: Revit version ("2024", "2025", "2026", or "auto")
+    """
     if element_types is None:
         element_types = ["walls", "floors", "ceilings", "pipes", "ducts", "columns", "beams"]
 
@@ -506,11 +540,16 @@ def extract_geometry(project_id: str, element_types: list = None) -> BridgeResul
         {
             "project_id": project_id,
             "element_types": element_types
-        }
+        },
+        target_version=target_version
     )
 
 
-def extract_semantic(project_id: str, include_parameters: bool = True) -> BridgeResult:
+def extract_semantic(
+    project_id: str,
+    include_parameters: bool = True,
+    target_version: str = "auto"
+) -> BridgeResult:
     """
     Extract semantic data with full metadata.
     This is the LOD 500 "Deep Scan" that captures:
@@ -518,6 +557,8 @@ def extract_semantic(project_id: str, include_parameters: bool = True) -> Bridge
     - Materials
     - Assembly codes
     - Penetration constraints
+
+    V3.0: Multi-version support
     """
     return run_revit_command(
         BridgeCommand.EXTRACT_SEMANTIC,
@@ -528,22 +569,23 @@ def extract_semantic(project_id: str, include_parameters: bool = True) -> Bridge
             "extract_material": True,
             "extract_assembly_code": True,
             "classify_voxels": True
-        }
+        },
+        target_version=target_version
     )
 
 
-def get_geometry(project_id: str) -> Dict[str, Any]:
+def get_geometry(project_id: str, target_version: str = "auto") -> Dict[str, Any]:
     """Get geometry - uses simulation or real bridge based on mode."""
-    result = extract_geometry(project_id)
+    result = extract_geometry(project_id, target_version=target_version)
     if result.success:
         return result.data
     else:
         raise Exception(f"Failed to extract geometry: {result.error}")
 
 
-def get_semantic_data(project_id: str) -> Dict[str, Any]:
+def get_semantic_data(project_id: str, target_version: str = "auto") -> Dict[str, Any]:
     """Get semantic data with full LOD 500 metadata."""
-    result = extract_semantic(project_id)
+    result = extract_semantic(project_id, target_version=target_version)
     if result.success:
         return result.data
     else:
@@ -553,7 +595,8 @@ def get_semantic_data(project_id: str) -> Dict[str, Any]:
 def place_sprinkler_families(
     project_id: str,
     locations: list,
-    family_type: str = "Standard Sprinkler"
+    family_type: str = "Standard Sprinkler",
+    target_version: str = "auto"
 ) -> BridgeResult:
     """Place sprinkler families at specified locations."""
     return run_revit_command(
@@ -562,14 +605,16 @@ def place_sprinkler_families(
             "project_id": project_id,
             "locations": locations,
             "family_type": family_type
-        }
+        },
+        target_version=target_version
     )
 
 
 def create_pipe_network(
     project_id: str,
     pipe_segments: list,
-    system_type: str = "Fire Protection"
+    system_type: str = "Fire Protection",
+    target_version: str = "auto"
 ) -> BridgeResult:
     """Create pipe network in Revit."""
     return run_revit_command(
@@ -578,7 +623,8 @@ def create_pipe_network(
             "project_id": project_id,
             "segments": pipe_segments,
             "system_type": system_type
-        }
+        },
+        target_version=target_version
     )
 
 

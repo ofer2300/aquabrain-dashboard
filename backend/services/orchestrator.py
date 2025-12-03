@@ -607,9 +607,10 @@ async def run_engineering_process(
     project_id: str,
     hazard_class: str = "ordinary_1",
     notes: str = "",
+    revit_version: str = "auto",
 ) -> Dict[str, Any]:
     """
-    Entry point for the engineering pipeline.
+    Entry point for the engineering pipeline (async).
 
     Called by the FastAPI endpoint.
     """
@@ -618,4 +619,68 @@ async def run_engineering_process(
         hazard_class=hazard_class,
         instructions=notes,
     )
+    return result.to_dict()
+
+
+def run_engineering_process_sync(
+    project_id: str,
+    hazard_class: str = "ordinary_1",
+    notes: str = "",
+    revit_version: str = "auto",
+    mock_mode: bool = True,
+) -> Dict[str, Any]:
+    """
+    Synchronous entry point for the engineering pipeline.
+
+    Used by the Universal Orchestrator Skill system.
+
+    Args:
+        project_id: Project identifier
+        hazard_class: NFPA 13 hazard classification
+        notes: Engineering notes
+        revit_version: Revit version (auto, 2024, 2025, 2026)
+        mock_mode: Use simulation instead of real Revit
+
+    Returns:
+        Pipeline result dictionary
+    """
+    import asyncio
+
+    # Update orchestrator mode
+    orchestrator.SIMULATION_MODE = mock_mode
+
+    # Run async in new event loop
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # Already in async context - create task
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                future = pool.submit(
+                    asyncio.run,
+                    orchestrator.run_pipeline(
+                        project_id=project_id,
+                        hazard_class=hazard_class,
+                        instructions=notes,
+                    )
+                )
+                result = future.result()
+        else:
+            result = loop.run_until_complete(
+                orchestrator.run_pipeline(
+                    project_id=project_id,
+                    hazard_class=hazard_class,
+                    instructions=notes,
+                )
+            )
+    except RuntimeError:
+        # No event loop - create new one
+        result = asyncio.run(
+            orchestrator.run_pipeline(
+                project_id=project_id,
+                hazard_class=hazard_class,
+                instructions=notes,
+            )
+        )
+
     return result.to_dict()

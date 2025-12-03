@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
 """
-AquaBrain Backend API
+AquaBrain Backend API V3.0
 FastAPI server for the AquaBrain Dashboard
+
+Features:
+- Universal Orchestrator (One Endpoint to Rule Them All)
+- Skill Factory (LLM-powered skill generation)
+- Full Audit Trail with SkillExecution table
+- Legacy endpoints for backward compatibility
 """
 
 from fastapi import FastAPI
@@ -23,11 +29,58 @@ from modules.standards import NFPA13Validator, HazardClass
 from modules.ingestion import ingestion_manager, ProjectStatus
 from services.orchestrator import run_engineering_process
 
+# === UNIVERSAL ORCHESTRATOR IMPORTS ===
+from api.orchestrator import router as orchestrator_router
+from api.skills import router as skills_router
+from api.factory import router as factory_router
+
 app = FastAPI(
     title="AquaBrain API",
-    description="Backend API for AquaBrain MEP Clash Detection System",
-    version="1.0.0"
+    description="Backend API for AquaBrain MEP Clash Detection System - V3.0 Universal Orchestrator",
+    version="3.0.0"
 )
+
+# === INCLUDE UNIVERSAL ORCHESTRATOR ROUTERS ===
+app.include_router(orchestrator_router)
+app.include_router(skills_router)
+app.include_router(factory_router)
+
+
+# === STARTUP EVENT: Initialize Skill Registry ===
+@app.on_event("startup")
+async def startup_event():
+    """Initialize the skill registry on startup."""
+    print("\n🔧 Initializing Universal Orchestrator...")
+
+    # Import and register builtin skills
+    try:
+        from skills.builtin import HydraulicCalculatorSkill, RevitExtractSkill, ReportGeneratorSkill
+        print("  ✓ Loaded builtin skills")
+    except ImportError as e:
+        print(f"  ⚠ Builtin skills not loaded: {e}")
+
+    # Import and register native skills
+    try:
+        from skills.native import RevitAutopilotSkill
+        print("  ✓ Loaded native skills (Revit Autopilot)")
+    except ImportError as e:
+        print(f"  ⚠ Native skills not loaded: {e}")
+
+    # Load custom skills (hot-reloadable)
+    try:
+        from core.skill_interface import initialize_skill_registry
+        initialize_skill_registry()
+    except Exception as e:
+        print(f"  ⚠ Custom skills not loaded: {e}")
+
+    # Report loaded skills
+    from skills.base import skill_registry
+    skills = skill_registry.list_all()
+    print(f"\n📚 Skill Registry: {len(skills)} skills loaded")
+    for skill in skills:
+        print(f"    • {skill.metadata.id}: {skill.metadata.name}")
+    print()
+
 
 # CORS middleware for frontend connection
 app.add_middleware(
@@ -416,6 +469,7 @@ class EngineeringProcessRequest(BaseModel):
     notes: str = ""
     hazard_class: str = "ordinary_1"
     async_mode: bool = True  # Use async (Celery) by default
+    revit_version: str = "auto"  # V3.0: Multi-version support ("2024", "2025", "2026", or "auto")
 
 
 class AsyncJobResponse(BaseModel):
@@ -428,7 +482,7 @@ class AsyncJobResponse(BaseModel):
 @app.post("/api/engineering/start-process")
 async def start_engineering_process_endpoint(request: EngineeringProcessRequest):
     """
-    🚀 THE CAPSULE - One Click Engineering (V2.0 Async)
+    🚀 THE CAPSULE - One Click Engineering (V3.0 Multi-Version)
 
     This is the "Tesla of Engineering" endpoint.
     One click triggers the complete automation workflow:
@@ -440,7 +494,8 @@ async def start_engineering_process_endpoint(request: EngineeringProcessRequest)
     5. Generate LOD 500 model in Revit
     6. Return Traffic Light status (GREEN/YELLOW/RED)
 
-    V2.0: Now supports async mode (default) for enterprise scalability.
+    V3.0: Multi-version Revit support (2024, 2025, 2026, auto)
+    V2.0: Async mode (default) for enterprise scalability.
 
     Async Mode (async_mode=true):
         - Returns immediately with run_id
@@ -450,7 +505,17 @@ async def start_engineering_process_endpoint(request: EngineeringProcessRequest)
     Sync Mode (async_mode=false):
         - Waits for completion (legacy behavior)
         - Simpler for single-user scenarios
+
+    Revit Version (revit_version):
+        - "auto": Auto-detect (tries 2026 -> 2025 -> 2024)
+        - "2026": Target Revit 2026 specifically
+        - "2025": Target Revit 2025 specifically
+        - "2024": Target Revit 2024 specifically
     """
+    # Validate Revit version
+    valid_versions = ["auto", "2024", "2025", "2026"]
+    revit_version = request.revit_version if request.revit_version in valid_versions else "auto"
+
     if request.async_mode:
         # ASYNC MODE: Queue task and return immediately
         try:
@@ -474,6 +539,7 @@ async def start_engineering_process_endpoint(request: EngineeringProcessRequest)
                         project_id=request.project_id,
                         hazard_class=request.hazard_class,
                         notes=request.notes,
+                        revit_version=revit_version,  # V3.0: Pass version to worker
                     )
                 except Exception as e:
                     print(f"[ERROR] Background task failed: {e}")
@@ -484,7 +550,8 @@ async def start_engineering_process_endpoint(request: EngineeringProcessRequest)
             return {
                 "run_id": run_id,
                 "status": "QUEUED",
-                "message": "Engineering job queued. Poll /api/engineering/status/{run_id} for progress.",
+                "message": f"Engineering job queued (Revit {revit_version}). Poll /api/engineering/status/{run_id} for progress.",
+                "revit_version": revit_version,
             }
 
         except Exception as e:
@@ -495,7 +562,8 @@ async def start_engineering_process_endpoint(request: EngineeringProcessRequest)
         result = await run_engineering_process(
             project_id=request.project_id,
             hazard_class=request.hazard_class,
-            notes=request.notes
+            notes=request.notes,
+            revit_version=revit_version,  # V3.0: Pass version
         )
         return result
 

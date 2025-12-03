@@ -14,7 +14,9 @@ import {
   Droplets,
   Hammer,
   Clock,
-  History
+  History,
+  ChevronDown,
+  Cpu
 } from 'lucide-react';
 
 // Process stages for the Auto-Pilot
@@ -34,6 +36,23 @@ type ProcessStage =
 
 // Traffic Light status
 type TrafficLight = 'GREEN' | 'YELLOW' | 'RED' | null;
+
+// V3.0: Revit Version Support
+type RevitVersion = 'auto' | '2024' | '2025' | '2026';
+
+interface RevitVersionOption {
+  value: RevitVersion;
+  label: string;
+  labelHe: string;
+  description: string;
+}
+
+const REVIT_VERSIONS: RevitVersionOption[] = [
+  { value: 'auto', label: 'Auto-Detect', labelHe: 'זיהוי אוטומטי', description: 'Recommended - tries 2026 → 2025 → 2024' },
+  { value: '2026', label: 'Revit 2026', labelHe: 'רוויט 2026', description: 'Latest version' },
+  { value: '2025', label: 'Revit 2025', labelHe: 'רוויט 2025', description: 'Stable release' },
+  { value: '2024', label: 'Revit 2024', labelHe: 'רוויט 2024', description: 'Legacy support' },
+];
 
 // API Response Types (V2.0 - Async Architecture)
 interface TrafficLightMetrics {
@@ -146,6 +165,9 @@ export function ProjectCapsule({ projectId = 'PRJ-500', projectName = 'מגדל 
   const [progress, setProgress] = useState(0);
   const [runId, setRunId] = useState<string | null>(null);
   const [pollCount, setPollCount] = useState(0);
+  // V3.0: Revit Version Selection
+  const [revitVersion, setRevitVersion] = useState<RevitVersion>('auto');
+  const [versionDropdownOpen, setVersionDropdownOpen] = useState(false);
 
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const isProcessing = !['idle', 'completed', 'failed'].includes(stage);
@@ -230,6 +252,7 @@ export function ProjectCapsule({ projectId = 'PRJ-500', projectName = 'מגדל 
           notes: notes,
           hazard_class: 'ordinary_1',
           async_mode: true,  // Use async mode
+          revit_version: revitVersion,  // V3.0: Multi-version support
         })
       });
 
@@ -334,6 +357,86 @@ export function ProjectCapsule({ projectId = 'PRJ-500', projectName = 'מגדל 
           )}
         </div>
       )}
+
+      {/* V3.0: Revit Version Selector */}
+      <div className="space-y-2">
+        <label className="text-sm text-text-secondary flex items-center gap-2">
+          <Cpu className="w-4 h-4" />
+          גרסת Revit
+        </label>
+        <div className="relative">
+          <button
+            onClick={() => setVersionDropdownOpen(!versionDropdownOpen)}
+            disabled={isProcessing}
+            className={`
+              w-full px-4 py-3 rounded-xl text-right
+              bg-white/5 border border-white/10
+              hover:border-status-ai/30 hover:bg-white/10
+              focus:outline-none focus:border-status-ai/50 focus:ring-1 focus:ring-status-ai/30
+              transition-all flex items-center justify-between
+              disabled:opacity-50 disabled:cursor-not-allowed
+              ${versionDropdownOpen ? 'border-status-ai/50 ring-1 ring-status-ai/30' : ''}
+            `}
+          >
+            <ChevronDown className={`w-5 h-5 text-white/50 transition-transform ${versionDropdownOpen ? 'rotate-180' : ''}`} />
+            <div className="flex items-center gap-3">
+              <div className="text-right">
+                <span className="text-white font-medium">
+                  {REVIT_VERSIONS.find(v => v.value === revitVersion)?.labelHe}
+                </span>
+                <span className="text-xs text-white/50 block">
+                  {REVIT_VERSIONS.find(v => v.value === revitVersion)?.description}
+                </span>
+              </div>
+              <div className={`
+                w-10 h-10 rounded-lg flex items-center justify-center
+                ${revitVersion === 'auto' ? 'bg-status-ai/20 text-status-ai' : 'bg-cyan-500/20 text-cyan-400'}
+              `}>
+                <Cpu className="w-5 h-5" />
+              </div>
+            </div>
+          </button>
+
+          {/* Dropdown Options */}
+          {versionDropdownOpen && (
+            <div className="absolute z-50 w-full mt-2 rounded-xl bg-slate-900/95 backdrop-blur-xl border border-white/10 shadow-2xl overflow-hidden">
+              {REVIT_VERSIONS.map((version) => (
+                <button
+                  key={version.value}
+                  onClick={() => {
+                    setRevitVersion(version.value);
+                    setVersionDropdownOpen(false);
+                  }}
+                  className={`
+                    w-full px-4 py-3 flex items-center justify-between text-right
+                    hover:bg-white/10 transition-all
+                    ${revitVersion === version.value ? 'bg-status-ai/10' : ''}
+                  `}
+                >
+                  <div className={`
+                    w-2 h-2 rounded-full
+                    ${revitVersion === version.value ? 'bg-status-ai' : 'bg-white/20'}
+                  `} />
+                  <div className="flex items-center gap-3">
+                    <div className="text-right">
+                      <span className={`font-medium ${revitVersion === version.value ? 'text-status-ai' : 'text-white'}`}>
+                        {version.labelHe}
+                      </span>
+                      <span className="text-xs text-white/50 block">{version.description}</span>
+                    </div>
+                    <div className={`
+                      w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold
+                      ${version.value === 'auto' ? 'bg-status-ai/20 text-status-ai' : 'bg-cyan-500/20 text-cyan-400'}
+                    `}>
+                      {version.value === 'auto' ? 'A' : version.value.slice(-2)}
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* Notes Input */}
       <div className="space-y-2">
@@ -520,7 +623,7 @@ export function ProjectCapsule({ projectId = 'PRJ-500', projectName = 'מגדל 
 
       {/* Footer Note */}
       <p className="text-xs text-center text-white/30">
-        Powered by AquaBrain AI Engine V2.0 | Async Architecture | NFPA 13 Compliant
+        Powered by AquaBrain AI Engine V3.0 | Multi-Version Revit | NFPA 13 Compliant
       </p>
     </div>
   );

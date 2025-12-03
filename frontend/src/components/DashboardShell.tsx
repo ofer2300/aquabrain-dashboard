@@ -12,26 +12,34 @@ import {
   Activity,
   Brain,
   Calculator,
-  Rocket
+  Rocket,
+  Globe,
 } from 'lucide-react';
 import { useSystemStatus } from '@/hooks/useSystemStatus';
+import { useLanguage, LanguageSwitcher, type Language } from '@/contexts/LanguageContext';
 
 interface NavItem {
   icon: React.ElementType;
-  label: string;
+  labelKey: string;
   href: string;
   badge?: string;
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { icon: LayoutDashboard, label: "Dashboard", href: "/" },
-  { icon: Rocket, label: "Auto-Pilot", href: "/autopilot", badge: "AI" },
-  { icon: Calculator, label: "Hydraulics", href: "/calculation" },
-  { icon: AlertTriangle, label: "Clashes", href: "/clashes" },
-  { icon: MessageSquare, label: "Communication", href: "/communication", badge: "LIVE" },
-  { icon: Calendar, label: "Work Plan", href: "/workplan" },
-  { icon: Settings, label: "Settings", href: "/settings" },
+  { icon: LayoutDashboard, labelKey: "dashboard", href: "/" },
+  { icon: Rocket, labelKey: "autopilot", href: "/autopilot", badge: "AI" },
+  { icon: Calculator, labelKey: "calculation", href: "/calculation" },
+  { icon: AlertTriangle, labelKey: "clashes", href: "/clashes" },
+  { icon: MessageSquare, labelKey: "communication", href: "/communication", badge: "LIVE" },
+  { icon: Calendar, labelKey: "workplan", href: "/workplan" },
+  { icon: Settings, labelKey: "settings", href: "/settings" },
 ];
+
+// Label fallbacks for keys not in dictionary
+const LABEL_FALLBACKS: Record<string, Record<Language, string>> = {
+  clashes: { he: 'התנגשויות', en: 'Clashes', ru: 'Коллизии' },
+  workplan: { he: 'תוכנית עבודה', en: 'Work Plan', ru: 'План работы' },
+};
 
 interface DashboardShellProps {
   children: React.ReactNode;
@@ -40,21 +48,41 @@ interface DashboardShellProps {
 export function DashboardShell({ children }: DashboardShellProps) {
   const pathname = usePathname();
   const { isConnected, status, isLoading } = useSystemStatus();
+  const { lang, direction, t } = useLanguage();
+
+  // Get label for nav item
+  const getLabel = (key: string): string => {
+    // Check if in nav dictionary
+    if (key in t.nav) {
+      return t.nav[key as keyof typeof t.nav];
+    }
+    // Check fallbacks
+    if (key in LABEL_FALLBACKS) {
+      return LABEL_FALLBACKS[key][lang];
+    }
+    return key;
+  };
 
   return (
-    <div className="flex h-screen bg-transparent">
+    <div className={`flex h-screen bg-transparent ${direction === 'rtl' ? 'flex-row-reverse' : ''}`}>
       {/* Sidebar - Glass Panel */}
-      <aside className="w-64 glass-panel flex flex-col m-3 mr-0">
-        {/* Logo */}
+      <aside className={`w-64 glass-panel flex flex-col m-3 ${direction === 'rtl' ? 'ml-0' : 'mr-0'}`}>
+        {/* Logo + Language Switcher */}
         <div className="p-6 border-b border-white/10">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-status-ai/20 flex items-center justify-center glow-ai">
-              <Brain className="w-6 h-6 text-status-ai" />
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-status-ai/20 flex items-center justify-center glow-ai">
+                <Brain className="w-6 h-6 text-status-ai" />
+              </div>
+              <div>
+                <h1 className="text-lg font-bold text-text-primary">AquaBrain</h1>
+                <p className="text-xs text-text-secondary">MEP Intelligence</p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-lg font-bold text-text-primary">AquaBrain</h1>
-              <p className="text-xs text-text-secondary">MEP Intelligence</p>
-            </div>
+          </div>
+          {/* Language Switcher */}
+          <div className="flex items-center justify-center">
+            <LanguageSwitcher variant="flags" />
           </div>
         </div>
 
@@ -63,6 +91,7 @@ export function DashboardShell({ children }: DashboardShellProps) {
           {NAV_ITEMS.map((item) => {
             const Icon = item.icon;
             const isActive = pathname === item.href;
+            const label = getLabel(item.labelKey);
 
             return (
               <Link
@@ -70,6 +99,7 @@ export function DashboardShell({ children }: DashboardShellProps) {
                 href={item.href}
                 className={`
                   flex items-center gap-3 px-4 py-3 rounded-xl transition-all
+                  ${direction === 'rtl' ? 'flex-row-reverse text-right' : ''}
                   ${isActive
                     ? 'bg-white/10 border border-white/20 text-text-primary glow-ai'
                     : 'text-text-secondary hover:bg-white/5 hover:text-text-primary border border-transparent'
@@ -77,7 +107,7 @@ export function DashboardShell({ children }: DashboardShellProps) {
                 `}
               >
                 <Icon className="w-5 h-5" />
-                <span className="flex-1">{item.label}</span>
+                <span className="flex-1">{label}</span>
                 {item.badge && (
                   <span className={`
                     text-[10px] px-2 py-0.5 rounded-full font-bold
