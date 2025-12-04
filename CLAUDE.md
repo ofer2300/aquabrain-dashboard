@@ -18,14 +18,34 @@ cd backend && source venv/bin/activate && python main.py
 # Frontend only
 cd frontend && npm run dev
 
-# Run tests
+# Build frontend
+cd frontend && npm run build
+
+# Frontend linting
+cd frontend && npm run lint
+
+# Run all backend tests
 cd backend && source venv/bin/activate && python -m pytest tests/ -v
 
 # Run single test file
 python -m pytest tests/unit/test_hydraulics.py -v
+
+# Test Gemini AI connection
+cd backend && python scripts/test_gemini_rest.py
 ```
 
 **Ports:** Backend: 8000 | Frontend: 3000 | Redis: 6379 | Flower: 5555
+
+## Environment Setup
+
+Create `backend/.env` with required secrets:
+```
+GEMINI_API_KEY=<your-gemini-api-key>
+# RPA credentials (optional)
+MEI_AVIVIM_ID=<id>
+GMAIL_USER=<email>
+GMAIL_USER_PASSWORD=<password>
+```
 
 ## Architecture
 
@@ -66,6 +86,22 @@ python -m pytest tests/unit/test_hydraulics.py -v
 - `mock_mode=True` returns simulated LOD 500 data
 - Semantic extraction: fire ratings, materials, assembly codes
 
+**AI Engine** (`backend/services/ai_engine.py`):
+- Multi-model support: Gemini (default) + Claude
+- REST-based clients (no SDK dependencies)
+- Unified interface: `ask_ai(prompt, provider="gemini"|"claude")`
+- Default: `gemini-2.5-flash` (500 req/day free tier)
+- Gemini models: `pro` (25/day), `flash` (500/day), `fast` (1500/day)
+- Claude models: `haiku`, `sonnet`, `opus` (requires ANTHROPIC_API_KEY)
+- `ask_aquabrain(prompt)` with engineering system prompt (NFPA 13 + ת"י 1596)
+- `analyze_ifc_element(data)` for IFC/BIM analysis
+
+**RPA / Web Agents** (`backend/skills/custom/`):
+- Playwright-based browser automation
+- Email OTP interception via IMAP (`services/email_reader.py`)
+- Base web agent class (`services/web_agent.py`)
+- Example: `mei_avivim_bot.py` for utility submissions
+
 ## Core API Endpoints
 
 | Endpoint | Purpose |
@@ -76,6 +112,7 @@ python -m pytest tests/unit/test_hydraulics.py -v
 | `GET /api/engineering/status/{run_id}` | Poll job progress |
 | `POST /api/factory/generate` | Create new skill from description |
 | `POST /api/calc/hydraulic` | Hazen-Williams calculation |
+| `POST /api/chat/interact` | Command Bar AI router |
 
 ## Engineering Domain
 
@@ -106,24 +143,42 @@ P = 4.52 × Q^1.85 / (C^1.85 × d^4.87) × L
 1. Create file in `backend/skills/builtin/` or `backend/skills/native/`
 2. Inherit from `AquaSkill` and implement `execute()`
 3. Use `@register_skill` decorator
-4. Define `input_schema` for dynamic form generation
+4. Define `metadata` and `input_schema` properties
 
 ```python
-from skills.base import AquaSkill, SkillResult, register_skill
+from skills.base import (
+    AquaSkill, ExecutionResult, ExecutionStatus,
+    SkillMetadata, SkillCategory, InputSchema, InputField, FieldType,
+    register_skill
+)
 
 @register_skill
 class MySkill(AquaSkill):
-    id = "my_skill"
-    name = "My Custom Skill"
+    @property
+    def metadata(self) -> SkillMetadata:
+        return SkillMetadata(
+            name="My Custom Skill",
+            description="Does something useful",
+            category=SkillCategory.CUSTOM,
+            icon="Cog"
+        )
 
     @property
-    def input_schema(self) -> dict:
-        return {"type": "object", "properties": {...}}
+    def input_schema(self) -> InputSchema:
+        return InputSchema(fields=[
+            InputField(name="value", label="Input Value", type=FieldType.TEXT)
+        ])
 
-    async def execute(self, inputs: dict, context: dict) -> SkillResult:
-        # Implementation
-        return SkillResult(success=True, data={...})
+    def execute(self, inputs: dict) -> ExecutionResult:
+        return ExecutionResult(
+            status=ExecutionStatus.SUCCESS,
+            skill_id=self.metadata.id,
+            message="Done!",
+            output={"result": inputs.get("value")}
+        )
 ```
+
+**Skill Categories**: `REVIT`, `AUTOCAD`, `HYDRAULICS`, `DOCUMENTATION`, `FILE_PROCESSING`, `DATA_ANALYSIS`, `REPORTING`, `INTEGRATION`, `RPA`, `CUSTOM`
 
 ## UI Guidelines
 
@@ -136,3 +191,22 @@ class MySkill(AquaSkill):
 SQLite (`aquabrain.db`) with tables:
 - `project_runs`: Pipeline execution history with JSON result storage
 - `skill_executions`: Audit trail for skill invocations
+
+## Frontend Context System
+
+**LanguageContext** (`frontend/src/contexts/LanguageContext.tsx`):
+- Hebrew/English switching via `useLanguage()` hook
+- `t(key)` function for translations
+- RTL support with `dir="rtl"` on Hebrew containers
+
+**ProjectContext** (`frontend/src/hooks/useProjectContext.tsx`):
+- Project state persistence in LocalStorage
+- `useProject()` hook for current project data
+- Preserves state across browser sessions
+
+## Key Frontend Components
+
+- `ProjectCapsule.tsx`: Main Auto-Pilot dashboard with Traffic Light status
+- `CommandBar.tsx`: AI chat interface, supports `/command` syntax
+- `SkillsGrid.tsx`: Grid of available skills with dynamic forms
+- `DynamicSkillForm.tsx`: Auto-generates forms from skill input schemas

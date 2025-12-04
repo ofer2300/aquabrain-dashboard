@@ -255,7 +255,7 @@ async def chat_endpoint(chat_message: ChatMessage):
 class InteractRequest(BaseModel):
     """Request for the Command Bar interact endpoint."""
     message: str
-    model: str = "claude"  # claude, gemini, gpt
+    model: str = "gemini"  # gemini (default/free), claude (paid)
     context: Optional[Dict[str, Any]] = None
 
 class InteractResponse(BaseModel):
@@ -329,29 +329,47 @@ async def chat_interact(request: InteractRequest):
                 timestamp=datetime.now().isoformat(),
             )
 
-    # Regular chat - simulate AI response
-    await asyncio.sleep(0.5)  # Brief thinking time
+    # Regular chat - use real AI engine based on selected model
+    try:
+        from services.ai_engine import ask_aquabrain
 
-    # Generate contextual response based on keywords
-    message_lower = message.lower()
+        # Use the AI engine with the selected provider
+        provider = "claude" if model == "claude" else "gemini"
 
-    if any(word in message_lower for word in ["צנרת", "pipe", "צינור"]):
-        response = "לתכנון מערכת צנרת, אני ממליץ:\n\n1. הגדר את סוג הסיכון (Light/Ordinary/Extra)\n2. חשב את ספיקת המים הנדרשת\n3. הרץ /hydraulic לחישוב לחצים\n4. הרץ /autopilot ליצירת תוואי אוטומטי"
-    elif any(word in message_lower for word in ["לחץ", "pressure", "ספיקה", "flow"]):
-        response = "לחישוב לחץ וספיקה, השתמש בפקודה:\n\n/hydraulic [ספיקה GPM] [קוטר אינץ'] [אורך פיט]\n\nלדוגמה: /hydraulic 150 2 100"
-    elif any(word in message_lower for word in ["nfpa", "תקן", "standard"]):
-        response = "AquaBrain תומך בתקני NFPA 13:\n\n• Light Hazard: 0.10 GPM/ft²\n• Ordinary Group 1: 0.15 GPM/ft²\n• Ordinary Group 2: 0.20 GPM/ft²\n• Extra Hazard 1: 0.30 GPM/ft²\n• Extra Hazard 2: 0.40 GPM/ft²"
-    elif any(word in message_lower for word in ["revit", "רוויט", "model"]):
-        response = "לחיבור ל-Revit:\n\n1. ודא ש-Revit 2025/2026 פתוח\n2. הרץ /extract לשליפת גיאומטריה\n3. הרץ /autopilot לתכנון אוטומטי\n\nסטטוס חיבור: מצב דמו (Mock Mode)"
-    else:
-        response = f"אני AquaBrain, עוזר AI להנדסת מערכות כיבוי אש וספרינקלרים.\n\nאני יכול לעזור לך ב:\n• חישובי הידראוליקה (/hydraulic)\n• תכנון תוואי צנרת (/route)\n• יצירת מודל LOD 500 (/autopilot)\n• הפקת דוחות (/report)\n\nמה תרצה לעשות?"
+        # Call AquaBrain AI with the user's message
+        ai_response = ask_aquabrain(message, provider=provider)
 
-    return InteractResponse(
-        response=response,
-        type="chat",
-        model=model,
-        timestamp=datetime.now().isoformat(),
-    )
+        return InteractResponse(
+            response=ai_response,
+            type="chat",
+            model=model,
+            timestamp=datetime.now().isoformat(),
+        )
+
+    except Exception as e:
+        # Fallback to mock response if AI fails
+        print(f"[AI Engine Error] {e}")
+
+        # Generate fallback response based on keywords
+        message_lower = message.lower()
+
+        if any(word in message_lower for word in ["צנרת", "pipe", "צינור"]):
+            response = "לתכנון מערכת צנרת, אני ממליץ:\n\n1. הגדר את סוג הסיכון (Light/Ordinary/Extra)\n2. חשב את ספיקת המים הנדרשת\n3. הרץ /hydraulic לחישוב לחצים\n4. הרץ /autopilot ליצירת תוואי אוטומטי"
+        elif any(word in message_lower for word in ["לחץ", "pressure", "ספיקה", "flow"]):
+            response = "לחישוב לחץ וספיקה, השתמש בפקודה:\n\n/hydraulic [ספיקה GPM] [קוטר אינץ'] [אורך פיט]\n\nלדוגמה: /hydraulic 150 2 100"
+        elif any(word in message_lower for word in ["nfpa", "תקן", "standard"]):
+            response = "AquaBrain תומך בתקני NFPA 13:\n\n• Light Hazard: 0.10 GPM/ft²\n• Ordinary Group 1: 0.15 GPM/ft²\n• Ordinary Group 2: 0.20 GPM/ft²\n• Extra Hazard 1: 0.30 GPM/ft²\n• Extra Hazard 2: 0.40 GPM/ft²"
+        elif any(word in message_lower for word in ["revit", "רוויט", "model"]):
+            response = "לחיבור ל-Revit:\n\n1. ודא ש-Revit 2025/2026 פתוח\n2. הרץ /extract לשליפת גיאומטריה\n3. הרץ /autopilot לתכנון אוטומטי\n\nסטטוס חיבור: מצב דמו (Mock Mode)"
+        else:
+            response = f"[Fallback Mode] אני AquaBrain, עוזר AI להנדסת מערכות כיבוי אש וספרינקלרים.\n\nאני יכול לעזור לך ב:\n• חישובי הידראוליקה (/hydraulic)\n• תכנון תוואי צנרת (/route)\n• יצירת מודל LOD 500 (/autopilot)\n• הפקת דוחות (/report)\n\nמה תרצה לעשות?"
+
+        return InteractResponse(
+            response=response,
+            type="chat",
+            model=model,
+            timestamp=datetime.now().isoformat(),
+        )
 
 
 # === Engineering Calculation Endpoints ===
