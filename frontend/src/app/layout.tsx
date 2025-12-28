@@ -3,7 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { LanguageProvider } from "@/contexts/LanguageContext";
 import { ProjectProvider } from "@/hooks/useProjectContext";
-import { CommandBar } from "@/components/CommandBar";
+import { UnifiedCommandBar } from "@/components/UnifiedCommandBar";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -32,12 +32,12 @@ export default function RootLayout({
       >
         <LanguageProvider defaultLang="he">
           <ProjectProvider>
-            {/* Main content with bottom padding for CommandBar */}
-            <div className="pb-16">
+            {/* Main content with bottom padding for UnifiedCommandBar */}
+            <div className="pb-40">
               {children}
             </div>
-            {/* Global Command Bar - appears on every page */}
-            <CommandBar />
+            {/* Unified Command Bar - Gemini (Brain) + Claude (Hands) */}
+            <UnifiedCommandBar />
           </ProjectProvider>
         </LanguageProvider>
       </body>

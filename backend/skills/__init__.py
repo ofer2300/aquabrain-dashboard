@@ -29,6 +29,12 @@ from . import builtin
 # Import native skills (platform core)
 from . import native
 
+# Import library skills (WhatsApp, Email, etc.)
+try:
+    from . import library
+except ImportError as e:
+    print(f"[WARN] Library skills not loaded: {e}")
+
 __all__ = [
     'AquaSkill',
     'SkillMetadata',

@@ -29,10 +29,21 @@ from modules.standards import NFPA13Validator, HazardClass
 from modules.ingestion import ingestion_manager, ProjectStatus
 from services.orchestrator import run_engineering_process
 
+# === LOCAL BRAIN: Research Skill ===
+from skills.research_skill import ResearchSkill
+
 # === UNIVERSAL ORCHESTRATOR IMPORTS ===
 from api.orchestrator import router as orchestrator_router
 from api.skills import router as skills_router
 from api.factory import router as factory_router
+from api.engineer_profile import router as engineer_profile_router
+from api.document_automation import router as document_automation_router
+from api.pipeline import router as pipeline_router
+
+# === STATIC FILES ===
+from fastapi.staticfiles import StaticFiles
+import os
+os.makedirs("uploads/stamps", exist_ok=True)
 
 app = FastAPI(
     title="AquaBrain API",
@@ -44,6 +55,12 @@ app = FastAPI(
 app.include_router(orchestrator_router)
 app.include_router(skills_router)
 app.include_router(factory_router)
+app.include_router(engineer_profile_router)
+app.include_router(document_automation_router)
+app.include_router(pipeline_router)
+
+# === MOUNT STATIC FILES FOR UPLOADS ===
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 
 # === STARTUP EVENT: Initialize Skill Registry ===
@@ -378,6 +395,9 @@ async def chat_interact(request: InteractRequest):
 hydraulic_calc = HydraulicCalculator()
 nfpa_validator = NFPA13Validator()
 
+# Initialize LOCAL BRAIN research skill
+researcher = ResearchSkill()
+
 
 @app.post("/api/calc/hydraulic", response_model=HydraulicOutput)
 async def calculate_hydraulic(data: HydraulicInput):
@@ -429,6 +449,56 @@ async def calculate_hydraulic(data: HydraulicInput):
         nfpa_requirements=nfpa_req,
         timestamp=datetime.now().isoformat(),
     )
+
+
+# === LOCAL BRAIN: Research Endpoint ===
+
+class ResearchInput(BaseModel):
+    """Input for the LOCAL BRAIN research endpoint."""
+    query: str = Field(..., description="The research question or content to analyze")
+    context: Optional[str] = Field(None, description="Additional context for the research")
+    research_type: str = Field(default="general", description="Type: general, code_analysis, summarization, engineering, comparison")
+    output_format: str = Field(default="structured", description="Format: structured, markdown, bullets, detailed")
+    max_length: str = Field(default="medium", description="Length: short, medium, long, unlimited")
+
+
+@app.post("/api/research")
+async def research_endpoint(data: ResearchInput):
+    """
+    🧠 LOCAL BRAIN Research Endpoint
+
+    Uses Ollama (RTX 4060 Ti, 16GB VRAM) for zero-latency research.
+    Falls back to Gemini if local LLM is unavailable.
+
+    Features:
+    - Engineering precision (Temperature: 0.2)
+    - Context window: 4096 tokens
+    - Privacy-first (data stays local)
+    - NFPA/ISO citation support
+
+    Research Types:
+    - general: General research and analysis
+    - code_analysis: Python/code explanation
+    - summarization: Condense information
+    - engineering: NFPA 13, building codes, MEP
+    - comparison: Pros/cons analysis
+    """
+    result = researcher.execute({
+        "query": data.query,
+        "context": data.context or "",
+        "research_type": data.research_type,
+        "output_format": data.output_format,
+        "max_length": data.max_length,
+    })
+
+    return {
+        "success": result.status.value == "success",
+        "message": result.message,
+        "output": result.output,
+        "metrics": result.metrics,
+        "duration_ms": result.duration_ms,
+        "timestamp": datetime.now().isoformat(),
+    }
 
 
 # === Project & Ingestion Endpoints ===

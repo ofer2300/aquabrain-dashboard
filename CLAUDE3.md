@@ -6,17 +6,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 AquaBrain is an AI-powered MEP (Mechanical, Electrical, Plumbing) engineering platform for fire sprinkler system design. It automates hydraulic calculations, clash detection, and LOD 500 model generation with NFPA 13 compliance validation.
 
+**Hybrid Local-First Architecture:** Gemini (Cloud Brain) + Claude Code CLI (Hands) + Ollama (Local Brain)
+
 ## Development Commands
 
 ```bash
 # Full stack launch (recommended)
 ./start_aquabrain.sh
 
-# Backend only
+# Backend only (port 8000)
 cd backend && source venv/bin/activate && python main.py
 
-# Frontend only
+# Frontend only (port 3000)
 cd frontend && npm run dev
+
+# Local Bridge Server (port 8085) - Required for Claude Agent
+# Note: Airflow uses 8080, so bridge moved to 8085
+cd local-server && npm install && node bridge.js
 
 # Build frontend
 cd frontend && npm run build
@@ -34,13 +40,14 @@ python -m pytest tests/unit/test_hydraulics.py -v
 cd backend && python scripts/test_gemini_rest.py
 ```
 
-**Ports:** Backend: 8000 | Frontend: 3000 | Redis: 6379 | Flower: 5555
+**Ports:** Backend: 8000 | Frontend: 3000 | Bridge: 8085 | Redis: 6379 | Flower: 5555
 
 ## Environment Setup
 
 Create `backend/.env` with required secrets:
 ```
 GEMINI_API_KEY=<your-gemini-api-key>
+OLLAMA_BASE_URL=http://localhost:11434
 # RPA credentials (optional)
 MEI_AVIVIM_ID=<id>
 GMAIL_USER=<email>
@@ -49,16 +56,67 @@ GMAIL_USER_PASSWORD=<password>
 
 ## Architecture
 
+### Hybrid Local-First Architecture (Triangular AI System)
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     USER INPUT                               │
+│                         │                                    │
+│         ┌───────────────┼───────────────┐                   │
+│         ▼               ▼               ▼                   │
+│   ┌───────────┐   ┌───────────┐   ┌──────────────┐         │
+│   │ 🏠 OLLAMA │   │ ☁️ GEMINI │   │ 🤖 CLAUDE    │         │
+│   │ LOCAL     │   │ CLOUD     │   │ EXECUTION    │         │
+│   │ BRAIN     │   │ BRAIN     │   │ HANDS        │         │
+│   │           │   │           │   │              │         │
+│   │ • Code    │   │ • Strategy│   │ • Execute    │         │
+│   │ • Tactics │   │ • Planning│   │ • Write      │         │
+│   │ • Research│   │ • Reason  │   │ • Run        │         │
+│   │ • Private │   │ • General │   │ • Revit      │         │
+│   └───────────┘   └───────────┘   └──────────────┘         │
+│   RTX 4060 Ti      Cloud API       Bridge (8085)            │
+│   16GB VRAM        (Fallback)                               │
+│   Zero Latency                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**The Three Pillars:**
+
+1. **LOCAL BRAIN (Ollama)**: `qwen2.5-coder:7b` running on RTX 4060 Ti (16GB VRAM) via port 11434
+   - Handles tactical code generation & privacy-focused research
+   - Temperature: 0.2 (engineering precision)
+   - Context window: 4096 tokens
+   - Zero latency, zero cost, full privacy
+
+2. **CLOUD BRAIN (Gemini)**: Strategic reasoning and complex analysis
+   - Fallback when local fails
+   - Wide world knowledge
+   - Complex multi-step reasoning
+
+3. **EXECUTION HANDS (Claude Code CLI)**: Real-world execution
+   - Filesystem operations
+   - CLI commands
+   - Revit automation via Bridge
+
+**Smart Router Logic:**
+```
+IF prompt contains ["python", "code", "script", "private", "refactor"] → USE OLLAMA (Local)
+IF prompt contains ["why", "explain", "strategy", "compare"] → USE GEMINI (Cloud)
+IF Local fails → Auto-fallback to Cloud
+```
+
 ### Three-Layer System
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  FRONTEND (Next.js 16 + React 19)                           │
+│  └─ UnifiedCommandBar: Gemini + Claude Agent toggle         │
 │  └─ /autopilot → ProjectCapsule (async polling)             │
 │  └─ /projects/[id] → Skills Grid + Auto-Pilot tabs          │
 ├─────────────────────────────────────────────────────────────┤
-│  UNIVERSAL ORCHESTRATOR                                      │
+│  UNIVERSAL ORCHESTRATOR + LOCAL BRIDGE                       │
 │  └─ POST /api/orchestrator/trigger ← "One Endpoint"         │
+│  └─ WebSocket Bridge (8085) → Claude Code CLI execution     │
 │  └─ Skill Registry (auto-discovery via @register_skill)     │
 │  └─ Celery/Redis async queue (thread fallback)              │
 ├─────────────────────────────────────────────────────────────┤
@@ -87,12 +145,19 @@ GMAIL_USER_PASSWORD=<password>
 - Semantic extraction: fire ratings, materials, assembly codes
 
 **AI Engine** (`backend/services/ai_engine.py`):
-- Multi-model support: Gemini (default) + Claude
-- REST-based clients (no SDK dependencies)
-- Unified interface: `ask_ai(prompt, provider="gemini"|"claude")`
-- Default: `gemini-2.5-flash` (500 req/day free tier)
-- Gemini models: `pro` (25/day), `flash` (500/day), `fast` (1500/day)
-- Claude models: `haiku`, `sonnet`, `opus` (requires ANTHROPIC_API_KEY)
+- Multi-model support: Ollama (local) + Gemini (cloud) + Claude (cloud)
+- Smart Router: Auto-routes queries based on content
+  - Code/Python/Private → Ollama (local, zero latency)
+  - Complex reasoning → Gemini (cloud fallback)
+- Providers:
+  - `ollama`: Local inference on RTX 4060 Ti (16GB VRAM)
+    - Default model: `qwen2.5-coder:7b`
+    - URL: `http://localhost:11434`
+  - `gemini`: Cloud API (fallback)
+    - Models: `pro` (25/day), `flash` (500/day), `fast` (1500/day)
+  - `claude`: Cloud API (optional)
+    - Models: `haiku`, `sonnet`, `opus`
+- Unified interface: `ask_ai(prompt, provider="ollama"|"gemini"|"claude")`
 - `ask_aquabrain(prompt)` with engineering system prompt (NFPA 13 + ת"י 1596)
 - `analyze_ifc_element(data)` for IFC/BIM analysis
 
@@ -101,6 +166,14 @@ GMAIL_USER_PASSWORD=<password>
 - Email OTP interception via IMAP (`services/email_reader.py`)
 - Base web agent class (`services/web_agent.py`)
 - Example: `mei_avivim_bot.py` for utility submissions
+
+**Local Bridge Server** (`local-server/bridge.js`):
+- WebSocket server on port 8085 for real-time command execution
+- Enables Claude Code CLI integration from the browser
+- Supports: PowerShell, Bash (WSL), Python, pyRevit, file operations
+- Message types: `claude_agent`, `powershell`, `bash`, `python`, `pyrevit`
+- Real-time streaming output back to frontend via WebSocket
+- Platform detection: Windows native or WSL2
 
 ## Core API Endpoints
 
@@ -113,6 +186,7 @@ GMAIL_USER_PASSWORD=<password>
 | `POST /api/factory/generate` | Create new skill from description |
 | `POST /api/calc/hydraulic` | Hazen-Williams calculation |
 | `POST /api/chat/interact` | Command Bar AI router |
+| `POST /api/research` | **LOCAL BRAIN** - Research via Ollama (RTX 4060 Ti) |
 
 ## Engineering Domain
 
@@ -178,7 +252,9 @@ class MySkill(AquaSkill):
         )
 ```
 
-**Skill Categories**: `REVIT`, `AUTOCAD`, `HYDRAULICS`, `DOCUMENTATION`, `FILE_PROCESSING`, `DATA_ANALYSIS`, `REPORTING`, `INTEGRATION`, `RPA`, `CUSTOM`
+**Skill Categories**: `REVIT`, `AUTOCAD`, `HYDRAULICS`, `DOCUMENTATION`, `FILE_PROCESSING`, `DATA_ANALYSIS`, `REPORTING`, `INTEGRATION`, `RPA`, `RESEARCH`, `CUSTOM`
+
+- `RESEARCH`: Autonomous web scraping and technical summarization using Local LLM (Ollama)
 
 ## UI Guidelines
 
@@ -206,7 +282,19 @@ SQLite (`aquabrain.db`) with tables:
 
 ## Key Frontend Components
 
+- `UnifiedCommandBar.tsx`: Dual-AI interface (Gemini + Claude Agent toggle)
+  - Gemini Flash/Pro+ for chat and reasoning
+  - Claude Agent mode for code execution via CLI
+  - Live Operations Log with status indicators (pending → processing → success/error)
 - `ProjectCapsule.tsx`: Main Auto-Pilot dashboard with Traffic Light status
 - `CommandBar.tsx`: AI chat interface, supports `/command` syntax
 - `SkillsGrid.tsx`: Grid of available skills with dynamic forms
 - `DynamicSkillForm.tsx`: Auto-generates forms from skill input schemas
+
+## Frontend Hooks
+
+- `useLocalBridge.ts`: WebSocket connection to local bridge server
+  - `runCommand(cmd, type)`: Execute command (powershell/bash/claude_agent)
+  - `runClaudeAgent(prompt)`: Send prompt to Claude Code CLI
+  - `logs`: Real-time output stream
+  - `isConnected`: Bridge connection status

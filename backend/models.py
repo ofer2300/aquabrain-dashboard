@@ -114,6 +114,85 @@ class ProjectHistory(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class EngineerProfile(Base):
+    """
+    Stores engineer personal details for document automation.
+    One-to-one relationship with user (by user_id or default for single user).
+    """
+    __tablename__ = "engineer_profiles"
+
+    id = Column(String(50), primary_key=True, index=True)
+    user_id = Column(String(100), nullable=True, unique=True, index=True)
+
+    # Basic Info
+    full_name = Column(String(200), nullable=False)
+    id_number = Column(String(9), nullable=False)  # Israeli ID: 9 digits
+    engineer_license = Column(String(50), nullable=True)
+
+    # Contact Info
+    email = Column(String(200), nullable=False)
+    email_provider = Column(String(20), default="gmail")  # gmail, outlook, icloud, other
+    custom_email = Column(String(200), nullable=True)
+    phone = Column(String(20), nullable=False)
+
+    # Stamp & Signature
+    stamp_signature_url = Column(String(500), nullable=True)
+    stamp_signature_path = Column(String(500), nullable=True)
+
+    # API Keys (stored as JSON, encrypted in production)
+    api_keys_json = Column(Text, default="{}")
+
+    # Adobe License
+    adobe_license = Column(String(200), nullable=True)
+
+    # Cloud Storage (stored as JSON)
+    cloud_storage_json = Column(Text, default="{}")
+
+    # Form State
+    is_locked = Column(Boolean, default=False)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def get_api_keys(self) -> dict:
+        """Retrieve API keys from JSON."""
+        return json.loads(self.api_keys_json) if self.api_keys_json else {}
+
+    def set_api_keys(self, keys: dict):
+        """Store API keys as JSON."""
+        self.api_keys_json = json.dumps(keys)
+
+    def get_cloud_storage(self) -> dict:
+        """Retrieve cloud storage config from JSON."""
+        return json.loads(self.cloud_storage_json) if self.cloud_storage_json else {}
+
+    def set_cloud_storage(self, config: dict):
+        """Store cloud storage config as JSON."""
+        self.cloud_storage_json = json.dumps(config)
+
+    def to_dict(self) -> dict:
+        """Convert to dictionary for API response."""
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "full_name": self.full_name,
+            "id_number": self.id_number,
+            "engineer_license": self.engineer_license,
+            "email": self.email,
+            "email_provider": self.email_provider,
+            "custom_email": self.custom_email,
+            "phone": self.phone,
+            "stamp_signature_url": self.stamp_signature_url,
+            "api_keys": self.get_api_keys(),
+            "adobe_license": self.adobe_license,
+            "cloud_storage": self.get_cloud_storage(),
+            "is_locked": self.is_locked,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
 class SkillExecution(Base):
     """
     Universal Skill Execution Audit Trail.

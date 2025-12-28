@@ -1,12 +1,15 @@
 """
-AquaBrain Celery Worker
+AquaBrain Worker Module
 =======================
 Async task processing for the engineering pipeline.
 
-Decouples heavy engineering logic from API responses.
-Enables horizontal scaling and prevents request timeouts.
+Supports TWO modes:
+1. CELERY MODE: When celery is installed, uses Celery/Redis for distributed processing
+2. THREAD MODE: When celery is NOT installed, runs tasks in background threads
 
-Run with: celery -A worker worker --loglevel=info
+This allows the system to work in development without Redis/Celery installed.
+
+Run Celery worker with: celery -A worker worker --loglevel=info
 """
 
 import os
@@ -20,53 +23,67 @@ import uuid
 # Add current directory to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from celery import Celery
-from celery.signals import task_prerun, task_postrun, task_failure
+# =============================================================================
+# CELERY MODE (Optional - only if celery is installed)
+# =============================================================================
+CELERY_AVAILABLE = False
+celery = None
 
-# Redis configuration (with fallback for dev without Redis)
-REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
-
-# Check if Redis is available, fallback to filesystem broker for dev
 try:
-    import redis
-    r = redis.from_url(REDIS_URL)
-    r.ping()
-    BROKER_URL = REDIS_URL
-    BACKEND_URL = REDIS_URL
-    print(f"[WORKER] Connected to Redis: {REDIS_URL}")
-except Exception as e:
-    # Fallback to filesystem for development without Redis
-    BROKER_URL = "filesystem://"
-    BACKEND_URL = "db+sqlite:///celery_results.db"
-    # Create required directories for filesystem broker
-    os.makedirs("./broker/out", exist_ok=True)
-    os.makedirs("./broker/processed", exist_ok=True)
-    print(f"[WORKER] Redis not available, using filesystem broker: {e}")
+    from celery import Celery
+    from celery.signals import task_prerun, task_postrun, task_failure
+    CELERY_AVAILABLE = True
+    print("[WORKER] Celery module available")
+except ImportError:
+    print("[WORKER] Celery not installed - using THREAD MODE (no Redis/Celery required)")
 
-# Initialize Celery
-celery = Celery(
-    "aquabrain",
-    broker=BROKER_URL,
-    backend=BACKEND_URL,
-)
+# Initialize Celery ONLY if available
+if CELERY_AVAILABLE:
+    # Redis configuration (with fallback for dev without Redis)
+    # Using port 6380 to avoid conflict with Windows/Docker Redis on 6379
+    REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6380/0")
 
-# Celery configuration
-celery.conf.update(
-    task_serializer="json",
-    accept_content=["json"],
-    result_serializer="json",
-    timezone="UTC",
-    enable_utc=True,
-    task_track_started=True,
-    task_time_limit=600,  # 10 minute max per task
-    result_expires=86400,  # Results expire after 24 hours
-    # Filesystem broker settings
-    broker_transport_options={
-        "data_folder_in": "./broker/out",
-        "data_folder_out": "./broker/out",
-        "data_folder_processed": "./broker/processed",
-    },
-)
+    # Check if Redis is available, fallback to filesystem broker for dev
+    try:
+        import redis
+        r = redis.from_url(REDIS_URL)
+        r.ping()
+        BROKER_URL = REDIS_URL
+        BACKEND_URL = REDIS_URL
+        print(f"[WORKER] Connected to Redis: {REDIS_URL}")
+    except Exception as e:
+        # Fallback to filesystem for development without Redis
+        BROKER_URL = "filesystem://"
+        BACKEND_URL = "db+sqlite:///celery_results.db"
+        # Create required directories for filesystem broker
+        os.makedirs("./broker/out", exist_ok=True)
+        os.makedirs("./broker/processed", exist_ok=True)
+        print(f"[WORKER] Redis not available, using filesystem broker: {e}")
+
+    # Initialize Celery
+    celery = Celery(
+        "aquabrain",
+        broker=BROKER_URL,
+        backend=BACKEND_URL,
+    )
+
+    # Celery configuration
+    celery.conf.update(
+        task_serializer="json",
+        accept_content=["json"],
+        result_serializer="json",
+        timezone="UTC",
+        enable_utc=True,
+        task_track_started=True,
+        task_time_limit=600,  # 10 minute max per task
+        result_expires=86400,  # Results expire after 24 hours
+        # Filesystem broker settings
+        broker_transport_options={
+            "data_folder_in": "./broker/out",
+            "data_folder_out": "./broker/out",
+            "data_folder_processed": "./broker/processed",
+        },
+    )
 
 
 def get_db_session():
@@ -131,9 +148,7 @@ def update_run_status(
         db.close()
 
 
-@celery.task(bind=True, name="engineering.run_pipeline")
-def run_engineering_job(
-    self,
+def _run_engineering_job_impl(
     run_id: str,
     project_id: str,
     hazard_class: str = "ordinary_1",
@@ -271,6 +286,34 @@ def run_engineering_job(
         raise
 
 
+# =============================================================================
+# PUBLIC WRAPPER - Works in BOTH Celery and Thread mode
+# =============================================================================
+def run_engineering_job(
+    run_id: str,
+    project_id: str,
+    hazard_class: str = "ordinary_1",
+    notes: str = "",
+    revit_version: str = "auto",
+) -> Dict[str, Any]:
+    """
+    Public wrapper for engineering job.
+
+    This function is called from main.py and works in both modes:
+    - CELERY MODE: Would dispatch to Celery task (if running with worker)
+    - THREAD MODE: Runs directly in current thread
+
+    The main.py already wraps this in a background thread, so we just run directly.
+    """
+    return _run_engineering_job_impl(
+        run_id=run_id,
+        project_id=project_id,
+        hazard_class=hazard_class,
+        notes=notes,
+        revit_version=revit_version,
+    )
+
+
 def create_run(
     project_id: str,
     hazard_class: str = "ordinary_1",
@@ -354,29 +397,37 @@ def get_project_history(project_id: str, limit: int = 10) -> list:
         db.close()
 
 
-# Task signals for monitoring
-@task_prerun.connect
-def task_started(sender=None, task_id=None, task=None, args=None, **kwargs):
-    """Log when task starts."""
-    print(f"[SIGNAL] Task started: {task_id}")
+# =============================================================================
+# CELERY SIGNALS (only if Celery is available)
+# =============================================================================
+if CELERY_AVAILABLE:
+    @task_prerun.connect
+    def task_started(sender=None, task_id=None, task=None, args=None, **kwargs):
+        """Log when task starts."""
+        print(f"[SIGNAL] Task started: {task_id}")
 
+    @task_postrun.connect
+    def task_completed(sender=None, task_id=None, task=None, retval=None, state=None, **kwargs):
+        """Log when task completes."""
+        print(f"[SIGNAL] Task completed: {task_id} (state={state})")
 
-@task_postrun.connect
-def task_completed(sender=None, task_id=None, task=None, retval=None, state=None, **kwargs):
-    """Log when task completes."""
-    print(f"[SIGNAL] Task completed: {task_id} (state={state})")
-
-
-@task_failure.connect
-def task_failed(sender=None, task_id=None, exception=None, **kwargs):
-    """Log when task fails."""
-    print(f"[SIGNAL] Task failed: {task_id} (error={exception})")
+    @task_failure.connect
+    def task_failed(sender=None, task_id=None, exception=None, **kwargs):
+        """Log when task fails."""
+        print(f"[SIGNAL] Task failed: {task_id} (error={exception})")
 
 
 if __name__ == "__main__":
     # Test the worker
-    print("AquaBrain Celery Worker")
+    print("AquaBrain Worker Module")
     print("=======================")
-    print(f"Broker: {BROKER_URL}")
-    print(f"Backend: {BACKEND_URL}")
-    print("\nTo start worker: celery -A worker worker --loglevel=info")
+    if CELERY_AVAILABLE:
+        print(f"Mode: CELERY")
+        print(f"Broker: {BROKER_URL}")
+        print(f"Backend: {BACKEND_URL}")
+        print("\nTo start worker: celery -A worker worker --loglevel=info")
+    else:
+        print(f"Mode: THREAD (no Celery/Redis required)")
+        print("Tasks run in background threads within the main API process.")
+        print("\nTo install Celery for distributed processing:")
+        print("  pip install celery redis")

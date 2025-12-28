@@ -515,6 +515,16 @@ async def list_available_skills():
     """
     skills = skill_registry.list_all()
 
+    def get_input_schema(s):
+        """Safely get input schema from skill."""
+        schema = s.input_schema
+        if hasattr(schema, 'to_json_schema'):
+            return schema.to_json_schema()
+        elif isinstance(schema, dict):
+            return schema
+        else:
+            return {"fields": []}
+
     return {
         "skills": [
             {
@@ -528,7 +538,7 @@ async def list_available_skills():
                 "tags": s.metadata.tags,
                 "requires_revit": s.metadata.requires_revit,
                 "requires_autocad": s.metadata.requires_autocad,
-                "input_schema": s.input_schema.to_json_schema(),
+                "input_schema": get_input_schema(s),
             }
             for s in skills
         ],

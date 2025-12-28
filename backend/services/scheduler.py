@@ -420,3 +420,215 @@ class TaskScheduler:
 
 # Global scheduler instance
 task_scheduler = TaskScheduler()
+
+
+# ============================================================================
+# AUTO-REGISTER SYSTEM JOBS
+# ============================================================================
+
+def register_auto_sign_job():
+    """
+    Register Skill #501 Auto-Sign job to run every 2 minutes.
+    Active Listening Mode for email declarations.
+    """
+    AUTO_SIGN_TASK_ID = "auto_sign_501_monitor"
+
+    # Check if already exists
+    existing = task_scheduler.get_task(AUTO_SIGN_TASK_ID)
+    if existing:
+        print(f"[Scheduler] Auto-Sign job already registered: {existing.id}")
+        return existing
+
+    # Create the auto-sign monitoring task
+    auto_sign_task = ScheduledTask(
+        id=AUTO_SIGN_TASK_ID,
+        skill_id="skill_501_auto_sign",
+        name="🔥 Auto-Sign Declaration Monitor",
+        description="Polls Gmail every 2 minutes for declaration emails to auto-sign",
+        schedule_type=ScheduleType.INTERVAL,
+        interval_minutes=2,  # Every 2 minutes
+        inputs={
+            "mode": "poll",
+            "engineer_name": "נימרוד עופר",
+            "id_number": "025181967",
+            "project_id": "auto_signed",
+            "auto_reply": True,
+        },
+        is_active=True,
+        created_by="system_v6",
+    )
+
+    task_scheduler.create_task(auto_sign_task)
+    print(f"[Scheduler] 🔥 Auto-Sign job registered: every 2 minutes")
+    return auto_sign_task
+
+
+def register_virtual_engineer_job():
+    """
+    Register Skill #601 Virtual Senior Engineer job to run every 15 minutes.
+    24/7 Watchdog for calendar monitoring and meeting preparation.
+    """
+    VIRTUAL_ENGINEER_TASK_ID = "virtual_engineer_601_monitor"
+
+    # Check if already exists
+    existing = task_scheduler.get_task(VIRTUAL_ENGINEER_TASK_ID)
+    if existing:
+        print(f"[Scheduler] Virtual Engineer job already registered: {existing.id}")
+        return existing
+
+    # Create the virtual engineer monitoring task
+    virtual_engineer_task = ScheduledTask(
+        id=VIRTUAL_ENGINEER_TASK_ID,
+        skill_id="skill_601_virtual_engineer",
+        name="👑 Virtual Senior Engineer 24/7",
+        description="Monitors calendar every 15 minutes, prepares meeting briefings automatically",
+        schedule_type=ScheduleType.INTERVAL,
+        interval_minutes=15,  # Every 15 minutes
+        inputs={
+            "mode": "auto",
+            "hours_ahead": 24,
+            "send_notification": True,
+        },
+        is_active=True,
+        created_by="system_v7",
+    )
+
+    task_scheduler.create_task(virtual_engineer_task)
+    print(f"[Scheduler] 👑 Virtual Engineer job registered: every 15 minutes")
+    return virtual_engineer_task
+
+
+def register_email_cockpit_polling_job():
+    """
+    Register Skill #701 Email Cockpit polling job to run every 2 minutes.
+    Polls Gmail/Outlook for new emails and processes them.
+    """
+    EMAIL_POLL_TASK_ID = "email_cockpit_701_poll"
+
+    # Check if already exists
+    existing = task_scheduler.get_task(EMAIL_POLL_TASK_ID)
+    if existing:
+        print(f"[Scheduler] Email Cockpit polling job already registered: {existing.id}")
+        return existing
+
+    # Create the email polling task
+    email_poll_task = ScheduledTask(
+        id=EMAIL_POLL_TASK_ID,
+        skill_id="701",
+        name="✉️ Email Cockpit - Poll Inbox",
+        description="Polls Gmail/Outlook every 2 minutes for new emails",
+        schedule_type=ScheduleType.INTERVAL,
+        interval_minutes=2,  # Every 2 minutes
+        inputs={
+            "action": "poll",
+        },
+        is_active=True,
+        created_by="system_v8",
+    )
+
+    task_scheduler.create_task(email_poll_task)
+    print(f"[Scheduler] ✉️ Email Cockpit polling job registered: every 2 minutes")
+    return email_poll_task
+
+
+def register_golden_hours_noon_job():
+    """
+    Register Skill #701 Golden Hours 12:00 trigger.
+    Shows the Focus Mode Dashboard at noon.
+    """
+    GOLDEN_NOON_TASK_ID = "email_cockpit_701_golden_noon"
+
+    # Check if already exists
+    existing = task_scheduler.get_task(GOLDEN_NOON_TASK_ID)
+    if existing:
+        print(f"[Scheduler] Golden Hours (12:00) job already registered: {existing.id}")
+        return existing
+
+    # Create the golden hour noon task (cron: 0 12 * * *)
+    golden_noon_task = ScheduledTask(
+        id=GOLDEN_NOON_TASK_ID,
+        skill_id="701",
+        name="🌟 Golden Hour 12:00 - Email Dashboard",
+        description="Triggers Email Focus Mode Dashboard at 12:00",
+        schedule_type=ScheduleType.CRON,
+        cron_expression="0 12 * * *",  # Every day at 12:00
+        inputs={
+            "action": "dashboard",
+        },
+        is_active=True,
+        created_by="system_v8",
+    )
+
+    task_scheduler.create_task(golden_noon_task)
+    print(f"[Scheduler] 🌟 Golden Hours (12:00) job registered")
+    return golden_noon_task
+
+
+def register_golden_hours_afternoon_job():
+    """
+    Register Skill #701 Golden Hours 16:00 trigger.
+    Shows the Focus Mode Dashboard in the afternoon.
+    """
+    GOLDEN_AFTERNOON_TASK_ID = "email_cockpit_701_golden_afternoon"
+
+    # Check if already exists
+    existing = task_scheduler.get_task(GOLDEN_AFTERNOON_TASK_ID)
+    if existing:
+        print(f"[Scheduler] Golden Hours (16:00) job already registered: {existing.id}")
+        return existing
+
+    # Create the golden hour afternoon task (cron: 0 16 * * *)
+    golden_afternoon_task = ScheduledTask(
+        id=GOLDEN_AFTERNOON_TASK_ID,
+        skill_id="701",
+        name="🌟 Golden Hour 16:00 - Email Dashboard",
+        description="Triggers Email Focus Mode Dashboard at 16:00",
+        schedule_type=ScheduleType.CRON,
+        cron_expression="0 16 * * *",  # Every day at 16:00
+        inputs={
+            "action": "dashboard",
+        },
+        is_active=True,
+        created_by="system_v8",
+    )
+
+    task_scheduler.create_task(golden_afternoon_task)
+    print(f"[Scheduler] 🌟 Golden Hours (16:00) job registered")
+    return golden_afternoon_task
+
+
+def initialize_scheduled_jobs():
+    """Initialize all system scheduled jobs on startup."""
+    print("[Scheduler] Initializing system jobs...")
+
+    # Register Auto-Sign Skill #501
+    try:
+        register_auto_sign_job()
+    except Exception as e:
+        print(f"[Scheduler] Warning: Could not register Auto-Sign job: {e}")
+
+    # Register Virtual Senior Engineer Skill #601
+    try:
+        register_virtual_engineer_job()
+    except Exception as e:
+        print(f"[Scheduler] Warning: Could not register Virtual Engineer job: {e}")
+
+    # Register Email Cockpit Skill #701 - Polling
+    try:
+        register_email_cockpit_polling_job()
+    except Exception as e:
+        print(f"[Scheduler] Warning: Could not register Email Cockpit polling job: {e}")
+
+    # Register Email Cockpit Skill #701 - Golden Hours 12:00
+    try:
+        register_golden_hours_noon_job()
+    except Exception as e:
+        print(f"[Scheduler] Warning: Could not register Golden Hours (12:00) job: {e}")
+
+    # Register Email Cockpit Skill #701 - Golden Hours 16:00
+    try:
+        register_golden_hours_afternoon_job()
+    except Exception as e:
+        print(f"[Scheduler] Warning: Could not register Golden Hours (16:00) job: {e}")
+
+    print("[Scheduler] System jobs initialized")

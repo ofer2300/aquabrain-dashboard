@@ -1,0 +1,66 @@
+{
+  "project_id": "PROJ-DEMO-2025",
+  "timestamp": "2025-12-06T10:26:25.888095",
+  "traffic_light": "GREEN",
+  "audit_hash": "862a244baf53e8f8",
+  "bom_summary": {
+    "parts": {
+      "VIC-001": {
+        "description": "Victaulic Elbow 90°",
+        "description_he": "מרפק ויקטולי 90°",
+        "quantity": 1,
+        "total_length_ft": 0.0,
+        "unit_cost_usd": 25.5,
+        "manufacturer": "Victaulic"
+      },
+      "VIC-002": {
+        "description": "Victaulic Tee",
+        "description_he": "טי ויקטולי",
+        "quantity": 1,
+        "total_length_ft": 0.0,
+        "unit_cost_usd": 35.0,
+        "manufacturer": "Victaulic"
+      },
+      "PIP-SCH40-2": {
+        "description": "2\" Schedule 40 Pipe",
+        "description_he": "צינור 2\" Schedule 40",
+        "quantity": 1,
+        "total_length_ft": 400.0,
+        "unit_cost_usd": 8.5,
+        "manufacturer": "Generic"
+      },
+      "PIP-SCH40-1.5": {
+        "description": "1.5\" Schedule 40 Pipe",
+        "description_he": "צינור 1.5\" Schedule 40",
+        "quantity": 1,
+        "total_length_ft": 250.0,
+        "unit_cost_usd": 6.0,
+        "manufacturer": "Generic"
+      },
+      "SPK-STD": {
+        "description": "Standard Sprinkler Head",
+        "description_he": "ראש ספרינקלר סטנדרטי",
+        "quantity": 45,
+        "total_length_ft": 0.0,
+        "unit_cost_usd": 12.0,
+        "manufacturer": "Viking"
+      }
+    },
+    "summary": {
+      "total_part_types": 5,
+      "total_parts": 49,
+      "total_pipe_length_ft": 650.0,
+      "estimated_cost_usd": 615.0
+    }
+  },
+  "violations": [],
+  "audit_log": [
+    "PASS: Hydraulic verification passed with 15.5% margin.",
+    "PASS: Velocity check passed (18.5 fps < 20 fps).",
+    "PASS: Clash detection passed (2 minor clearance issues)."
+  ],
+  "nfpa_compliance_statement": "System designed in accordance with NFPA 13 (2025 Edition) and Israeli Standard ת\"י 1596 for fire water systems.",
+  "next_step": "Ready for Fabrication - Upload to manufacturer portal\nמוכן לייצור - העלאה לפורטל יצרן",
+  "hydraulic_status": "PASS",
+  "clash_status": "PASS"
+}

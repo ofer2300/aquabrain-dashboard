@@ -1,0 +1,165 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "File Sanitization API",
+    "description": "Fix Hebrew encoding and process DXF/DWG files for AquaSkill",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/fix-hebrew": {
+      "post": {
+        "operationId": "fixHebrewEncoding",
+        "summary": "Fix Hebrew encoding in DXF/DWG files",
+        "description": "Converts Windows-1255 Hebrew encoding to UTF-8 in AutoCAD files",
+        "parameters": [
+          {
+            "name": "s3_uri",
+            "in": "query",
+            "description": "S3 URI of the input file (e.g., s3://bucket/path/file.dxf)",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^s3://[a-z0-9][a-z0-9.-]*[a-z0-9]/.*$"
+            }
+          },
+          {
+            "name": "output_suffix",
+            "in": "query",
+            "description": "Suffix to add to output filename (default: _fixed)",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "_fixed"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "File processed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": ["SUCCESS", "FAILED"],
+                      "description": "Processing status"
+                    },
+                    "fixed_s3_uri": {
+                      "type": "string",
+                      "description": "S3 URI of the fixed file"
+                    },
+                    "entities_fixed": {
+                      "type": "integer",
+                      "description": "Number of text entities with Hebrew that were fixed"
+                    },
+                    "processing_time_ms": {
+                      "type": "integer",
+                      "description": "Processing time in milliseconds"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/extract-geometry": {
+      "post": {
+        "operationId": "extractGeometry",
+        "summary": "Extract geometry data from DXF file",
+        "description": "Extracts polylines, text, and layer information from DXF files",
+        "parameters": [
+          {
+            "name": "s3_uri",
+            "in": "query",
+            "description": "S3 URI of the DXF file",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "include_text",
+            "in": "query",
+            "description": "Include text entities in extraction",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          {
+            "name": "include_dimensions",
+            "in": "query",
+            "description": "Include dimension entities",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Geometry extracted successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    },
+                    "polylines_count": {
+                      "type": "integer"
+                    },
+                    "text_entities_count": {
+                      "type": "integer"
+                    },
+                    "layers": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "bounding_box": {
+                      "type": "object",
+                      "properties": {
+                        "min_x": { "type": "number" },
+                        "min_y": { "type": "number" },
+                        "max_x": { "type": "number" },
+                        "max_y": { "type": "number" }
+                      }
+                    },
+                    "output_s3_uri": {
+                      "type": "string",
+                      "description": "S3 URI of the JSON geometry export"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

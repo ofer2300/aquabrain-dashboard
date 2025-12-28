@@ -1,0 +1,95 @@
+{
+  "plan_id": "831b5575-71e1-4bde-aec9-8c54fbcc5cf9",
+  "project_id": "PROJ-DEMO-2025",
+  "created_at": "2025-12-06T10:26:25.887465",
+  "risk_profile": "HIGH_COMPLEXITY",
+  "steps": [
+    {
+      "id": "P01_Meta_Extract",
+      "tool": "Revit_Bridge",
+      "description": "Extract geometry metadata from RVT model",
+      "description_he": "חילוץ מטא-דאטה גיאומטרי ממודל RVT",
+      "status": "PENDING",
+      "result": null
+    },
+    {
+      "id": "E02_Voxel_Grid",
+      "tool": "Code_Interpreter",
+      "description": "Generate 3D obstacle grid (0.1m resolution)",
+      "description_he": "יצירת גריד מכשולים תלת-ממדי (רזולוציה 0.1מ')",
+      "status": "PENDING",
+      "result": null
+    },
+    {
+      "id": "P03_NFPA_Fetch",
+      "tool": "Browser_Tool",
+      "description": "Fetch NFPA 13 density curves for Extra Group 1",
+      "description_he": "שליפת עקומות צפיפות NFPA 13 ל-Extra Group 1",
+      "status": "PENDING",
+      "result": null
+    },
+    {
+      "id": "E04_Sprinkler_Place",
+      "tool": "Code_Interpreter",
+      "description": "Place sprinkler heads (0.3 GPM/ft², max 90 ft²)",
+      "description_he": "מיקום ראשי ספרינקלרים (0.3 GPM/ft², מקס' 90 ft²)",
+      "status": "PENDING",
+      "result": null
+    },
+    {
+      "id": "E05_Routing_A_Star",
+      "tool": "Code_Interpreter",
+      "description": "Route pipes using A* pathfinding, avoiding clashes",
+      "description_he": "ניתוב צנרת באמצעות A*, הימנעות מקלאשים",
+      "status": "PENDING",
+      "result": null
+    },
+    {
+      "id": "E06_Seismic_Calc",
+      "tool": "Code_Interpreter",
+      "description": "Calculate seismic bracing loads (NFPA 13 Ch. 9)",
+      "description_he": "חישוב עומסי תמיכה סיסמית (NFPA 13 פרק 9)",
+      "status": "PENDING",
+      "result": null
+    },
+    {
+      "id": "E07_Hydraulic_Transient",
+      "tool": "Code_Interpreter",
+      "description": "Perform transient surge analysis (water hammer)",
+      "description_he": "ניתוח מעבר הידראולי (פטיש מים)",
+      "status": "PENDING",
+      "result": null
+    },
+    {
+      "id": "E08_Clash_Detection",
+      "tool": "Revit_Bridge",
+      "description": "Run clash detection against structure and MEP",
+      "description_he": "הרצת זיהוי קלאשים מול מבנה ו-MEP",
+      "status": "PENDING",
+      "result": null
+    },
+    {
+      "id": "E09_LOD500_Fab",
+      "tool": "Code_Interpreter",
+      "description": "Generate LOD 500 fabrication parts and BOM",
+      "description_he": "יצירת חלקי ייצור LOD 500 ו-BOM",
+      "status": "PENDING",
+      "result": null
+    },
+    {
+      "id": "V10_Final_Verify",
+      "tool": "AI_Engine",
+      "description": "Generate signed verification report with audit trail",
+      "description_he": "הפקת דו\"ח אימות חתום עם נתיב ביקורת",
+      "status": "PENDING",
+      "result": null
+    }
+  ],
+  "current_step_index": 0,
+  "status": "READY_TO_EXECUTE",
+  "inputs": {
+    "hazard_class": "Extra Group 1",
+    "remote_area": 3500,
+    "available_pressure": 55
+  }
+}

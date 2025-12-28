@@ -1,0 +1,227 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Hydraulic Engine API",
+    "description": "Hazen-Williams hydraulic calculations for fire sprinkler systems",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/calculate-pressure-loss": {
+      "post": {
+        "operationId": "calculatePressureLoss",
+        "summary": "Calculate pressure loss using Hazen-Williams formula",
+        "description": "Calculates friction loss in PSI for a pipe segment using Q^1.85 formula",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["flow_gpm", "pipe_diameter_inch", "pipe_length_ft"],
+                "properties": {
+                  "flow_gpm": {
+                    "type": "number",
+                    "description": "Flow rate in gallons per minute",
+                    "minimum": 0
+                  },
+                  "pipe_diameter_inch": {
+                    "type": "number",
+                    "description": "Internal pipe diameter in inches",
+                    "minimum": 0.5,
+                    "maximum": 12
+                  },
+                  "pipe_length_ft": {
+                    "type": "number",
+                    "description": "Pipe length in feet",
+                    "minimum": 0
+                  },
+                  "c_factor": {
+                    "type": "integer",
+                    "description": "Hazen-Williams C factor (default: 120 for black steel)",
+                    "default": 120,
+                    "minimum": 60,
+                    "maximum": 150
+                  },
+                  "include_fittings": {
+                    "type": "boolean",
+                    "description": "Include equivalent length for fittings",
+                    "default": true
+                  },
+                  "fittings": {
+                    "type": "array",
+                    "description": "List of fittings to include in calculation",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": ["elbow_90", "elbow_45", "tee_flow", "tee_side", "gate_valve", "check_valve", "butterfly_valve"]
+                        },
+                        "quantity": {
+                          "type": "integer",
+                          "minimum": 1
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Calculation completed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": ["SUCCESS", "FAILED"]
+                    },
+                    "pressure_loss_psi": {
+                      "type": "number",
+                      "description": "Total pressure loss in PSI"
+                    },
+                    "velocity_fps": {
+                      "type": "number",
+                      "description": "Flow velocity in feet per second"
+                    },
+                    "velocity_warning": {
+                      "type": "boolean",
+                      "description": "True if velocity exceeds recommended limits"
+                    },
+                    "equivalent_length_ft": {
+                      "type": "number",
+                      "description": "Total equivalent length including fittings"
+                    },
+                    "formula_used": {
+                      "type": "string",
+                      "description": "Hazen-Williams formula reference"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/analyze-path": {
+      "post": {
+        "operationId": "analyzeHydraulicPath",
+        "summary": "Analyze complete hydraulic path from remote area to water supply",
+        "description": "Calculates cumulative pressure requirements for entire sprinkler system path",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["pipe_segments", "remote_area_demand_gpm"],
+                "properties": {
+                  "remote_area_demand_gpm": {
+                    "type": "number",
+                    "description": "Total flow demand at remote area in GPM"
+                  },
+                  "remote_area_pressure_psi": {
+                    "type": "number",
+                    "description": "Required pressure at most remote sprinkler in PSI",
+                    "default": 7
+                  },
+                  "pipe_segments": {
+                    "type": "array",
+                    "description": "Ordered list of pipe segments from remote to supply",
+                    "items": {
+                      "type": "object",
+                      "required": ["diameter_inch", "length_ft"],
+                      "properties": {
+                        "segment_id": {
+                          "type": "string"
+                        },
+                        "diameter_inch": {
+                          "type": "number"
+                        },
+                        "length_ft": {
+                          "type": "number"
+                        },
+                        "elevation_change_ft": {
+                          "type": "number",
+                          "description": "Elevation change (positive = up)"
+                        },
+                        "additional_flow_gpm": {
+                          "type": "number",
+                          "description": "Flow added at this segment junction",
+                          "default": 0
+                        },
+                        "c_factor": {
+                          "type": "integer",
+                          "default": 120
+                        }
+                      }
+                    }
+                  },
+                  "hose_stream_allowance_gpm": {
+                    "type": "number",
+                    "description": "Hose stream demand per NFPA 13",
+                    "default": 250
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Path analysis completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    },
+                    "total_demand_gpm": {
+                      "type": "number",
+                      "description": "Total system demand including hose stream"
+                    },
+                    "total_pressure_required_psi": {
+                      "type": "number",
+                      "description": "Total pressure required at water supply"
+                    },
+                    "friction_loss_psi": {
+                      "type": "number"
+                    },
+                    "elevation_loss_psi": {
+                      "type": "number"
+                    },
+                    "segment_results": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "segment_id": { "type": "string" },
+                          "friction_loss_psi": { "type": "number" },
+                          "cumulative_flow_gpm": { "type": "number" },
+                          "velocity_fps": { "type": "number" }
+                        }
+                      }
+                    },
+                    "traffic_light": {
+                      "type": "string",
+                      "enum": ["GREEN", "YELLOW", "RED"],
+                      "description": "System status based on hydraulic performance"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

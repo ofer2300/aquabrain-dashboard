@@ -1,0 +1,99 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AgentCoreRuntimeAccess",
+      "Effect": "Allow",
+      "Action": [
+        "bedrock:InvokeModel",
+        "bedrock:Retrieve"
+      ],
+      "Resource": [
+        "arn:aws:bedrock:*::foundation-model/anthropic.claude-3-5-sonnet-20240620-v1:0",
+        "arn:aws:bedrock:*::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0"
+      ]
+    },
+    {
+      "Sid": "CodeInterpreterAccess",
+      "Effect": "Allow",
+      "Action": [
+        "bedrock:InvokeModelWithResponseStream"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "S3DataPlane",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:ListBucket",
+        "s3:DeleteObject"
+      ],
+      "Resource": [
+        "arn:aws:s3:::aquabrain-projects-input-*",
+        "arn:aws:s3:::aquabrain-projects-input-*/*",
+        "arn:aws:s3:::aquabrain-audit-trail-*",
+        "arn:aws:s3:::aquabrain-audit-trail-*/*",
+        "arn:aws:s3:::aquabrain-lod500-results-*",
+        "arn:aws:s3:::aquabrain-lod500-results-*/*"
+      ]
+    },
+    {
+      "Sid": "DynamoDBAccess",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:UpdateItem",
+        "dynamodb:Query",
+        "dynamodb:Scan"
+      ],
+      "Resource": [
+        "arn:aws:dynamodb:*:*:table/SkillExecution-*",
+        "arn:aws:dynamodb:*:*:table/SkillExecution-*/index/*"
+      ]
+    },
+    {
+      "Sid": "ExecuteActionGroups",
+      "Effect": "Allow",
+      "Action": "lambda:InvokeFunction",
+      "Resource": [
+        "arn:aws:lambda:*:*:function:AquaSkill-*"
+      ]
+    },
+    {
+      "Sid": "SQSAccess",
+      "Effect": "Allow",
+      "Action": [
+        "sqs:SendMessage",
+        "sqs:ReceiveMessage",
+        "sqs:DeleteMessage",
+        "sqs:GetQueueAttributes"
+      ],
+      "Resource": [
+        "arn:aws:sqs:*:*:AquaSkill-*"
+      ]
+    },
+    {
+      "Sid": "CloudWatchLogs",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+      ],
+      "Resource": "arn:aws:logs:*:*:log-group:/aws/lambda/AquaSkill-*"
+    },
+    {
+      "Sid": "BedrockAgentInvocation",
+      "Effect": "Allow",
+      "Action": [
+        "bedrock:InvokeAgent",
+        "bedrock:GetAgent",
+        "bedrock:ListAgentAliases"
+      ],
+      "Resource": "arn:aws:bedrock:*:*:agent/*"
+    }
+  ]
+}

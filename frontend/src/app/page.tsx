@@ -4,6 +4,8 @@ import { useState } from "react";
 import { DashboardShell } from "@/components/DashboardShell";
 import { SmartResolutionCard } from "@/components/SmartResolutionCard";
 import { SkillWizardModal } from "@/components/SkillWizardModal";
+import { SkillOutputConsole } from "@/components/SkillOutputConsole";
+import { useLocalBridge } from "@/hooks/useLocalBridge";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -18,18 +20,52 @@ import {
   FileBarChart,
   Cog,
   Wand2,
+  Loader2,
 } from "lucide-react";
 
-// Built-in skills data
+// Built-in skills data - mapped to Python CLI commands
 const BUILTIN_SKILLS = [
-  { id: 'builtin_hydraulic', name: 'חישוב הידראולי', icon: 'Droplets', color: '#00E676' },
-  { id: 'builtin_revit_extract', name: 'שליפת Revit', icon: 'Building2', color: '#4FACFE' },
-  { id: 'builtin_report_gen', name: 'יצירת דוחות', icon: 'FileBarChart', color: '#BD00FF' },
+  {
+    id: 'builtin_hydraulic',
+    name: 'חישוב הידראולי',
+    icon: 'Droplets',
+    color: '#00E676',
+    pythonSkill: 'calc-hydraulics',  // Future: will be added to AquaBrain_Terminal
+    params: { flow: 500, pipe_diameter: 4 }
+  },
+  {
+    id: 'builtin_revit_extract',
+    name: 'שליפת Revit',
+    icon: 'Building2',
+    color: '#4FACFE',
+    pythonSkill: 'info',  // Currently available command
+    params: {}
+  },
+  {
+    id: 'builtin_report_gen',
+    name: 'יצירת דוחות',
+    icon: 'FileBarChart',
+    color: '#BD00FF',
+    pythonSkill: 'info',  // Currently available command
+    params: {}
+  },
 ];
 
 export default function Home() {
   const [isWizardOpen, setIsWizardOpen] = useState(false);
-  const [customSkills, setCustomSkills] = useState<Array<{id: string; name: string; icon: string; color: string}>>([]);
+  const [customSkills, setCustomSkills] = useState<Array<{id: string; name: string; icon: string; color: string; pythonSkill?: string; params?: any}>>([]);
+
+  // Neural Link: Connect to Python Core
+  const {
+    runSkill,
+    logs,
+    skillResults,
+    currentSkill,
+    status,
+    pythonCore,
+    clearSkillResults,
+    isConnected,
+  } = useLocalBridge();
 
   const handleSkillCreated = (skill: any) => {
     setCustomSkills(prev => [...prev, {
@@ -37,7 +73,15 @@ export default function Home() {
       name: skill.name,
       icon: skill.icon,
       color: skill.color,
+      pythonSkill: 'info',
+      params: {},
     }]);
+  };
+
+  // Execute a skill via the Neural Link
+  const handleSkillExecute = (skillId: string, pythonSkill: string, params: any) => {
+    console.log(`🐍 Executing skill: ${skillId} -> ${pythonSkill}`, params);
+    runSkill(pythonSkill, params);
   };
 
   // נתוני דוגמה לפתרון התנגשות
@@ -210,19 +254,43 @@ export default function Home() {
             <div className="flex items-center gap-3">
               <Wand2 className="w-5 h-5 text-purple-400" />
               <h2 className="text-xl font-bold">Skill Factory</h2>
-              <span className="text-xs text-white/40 glass rounded-full px-3 py-1">AI Powered</span>
+              <span className="text-xs text-white/40 glass rounded-full px-3 py-1">Neural Link</span>
+              {/* Python Core Status */}
+              <div className={`flex items-center gap-2 px-3 py-1 rounded-full ${
+                pythonCore?.connected ? 'bg-emerald-500/20' : 'bg-red-500/20'
+              }`}>
+                <div className={`w-2 h-2 rounded-full ${
+                  pythonCore?.connected ? 'bg-emerald-400' : 'bg-red-400'
+                }`} />
+                <span className={`text-xs ${
+                  pythonCore?.connected ? 'text-emerald-300' : 'text-red-300'
+                }`}>
+                  {pythonCore?.connected ? 'Python Core' : 'Disconnected'}
+                </span>
+              </div>
             </div>
           </div>
 
           <div className="grid grid-cols-5 gap-4">
             {/* Built-in Skills */}
             {BUILTIN_SKILLS.map((skill) => (
-              <SkillCard key={skill.id} skill={skill} />
+              <SkillCard
+                key={skill.id}
+                skill={skill}
+                isRunning={currentSkill === skill.pythonSkill}
+                onExecute={() => handleSkillExecute(skill.id, skill.pythonSkill, skill.params)}
+              />
             ))}
 
             {/* Custom Skills */}
             {customSkills.map((skill) => (
-              <SkillCard key={skill.id} skill={skill} isCustom />
+              <SkillCard
+                key={skill.id}
+                skill={skill}
+                isCustom
+                isRunning={currentSkill === skill.pythonSkill}
+                onExecute={() => handleSkillExecute(skill.id, skill.pythonSkill || 'info', skill.params || {})}
+              />
             ))}
 
             {/* Create New Skill Card */}
@@ -238,6 +306,17 @@ export default function Home() {
               </span>
             </button>
           </div>
+        </section>
+
+        {/* ===== NEURAL LINK: SKILL OUTPUT CONSOLE ===== */}
+        <section className="space-y-4">
+          <SkillOutputConsole
+            logs={logs}
+            skillResults={skillResults}
+            currentSkill={currentSkill}
+            status={status}
+            onClear={clearSkillResults}
+          />
         </section>
       </div>
 
@@ -256,12 +335,17 @@ export default function Home() {
    ============================================= */
 
 interface SkillCardProps {
-  skill: { id: string; name: string; icon: string; color: string };
+  skill: { id: string; name: string; icon: string; color: string; pythonSkill?: string };
   isCustom?: boolean;
+  isRunning?: boolean;
+  onExecute?: () => void;
 }
 
-function SkillCard({ skill, isCustom }: SkillCardProps) {
+function SkillCard({ skill, isCustom, isRunning, onExecute }: SkillCardProps) {
   const IconComponent = () => {
+    if (isRunning) {
+      return <Loader2 className="w-6 h-6 animate-spin" />;
+    }
     switch (skill.icon) {
       case 'Droplets': return <Droplets className="w-6 h-6" />;
       case 'Building2': return <Building2 className="w-6 h-6" />;
@@ -271,13 +355,21 @@ function SkillCard({ skill, isCustom }: SkillCardProps) {
   };
 
   return (
-    <div
-      className="glass-heavy rounded-2xl p-5 hover:scale-105 transition-all duration-300 cursor-pointer group"
+    <button
+      onClick={onExecute}
+      disabled={isRunning}
+      className={`glass-heavy rounded-2xl p-5 transition-all duration-300 cursor-pointer group text-left ${
+        isRunning
+          ? 'animate-pulse ring-2 ring-purple-500/50'
+          : 'hover:scale-105'
+      }`}
       style={{ boxShadow: `0 0 20px ${skill.color}20` }}
     >
       <div className="flex flex-col items-center gap-3">
         <div
-          className="w-12 h-12 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"
+          className={`w-12 h-12 rounded-xl flex items-center justify-center transition-transform ${
+            isRunning ? '' : 'group-hover:scale-110'
+          }`}
           style={{ backgroundColor: `${skill.color}30` }}
         >
           <span style={{ color: skill.color }}>
@@ -290,8 +382,13 @@ function SkillCard({ skill, isCustom }: SkillCardProps) {
             Custom
           </span>
         )}
+        {isRunning && (
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/30 text-purple-200">
+            Running...
+          </span>
+        )}
       </div>
-    </div>
+    </button>
   );
 }
 

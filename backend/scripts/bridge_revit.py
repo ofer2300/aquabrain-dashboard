@@ -101,7 +101,7 @@ REVIT_WORKER_SCRIPT = r"C:\AquaBrain\Workers\revit_automation.py"
 PYREVIT_CLI = "pyrevit"
 
 # Mode control
-MOCK_MODE = True  # Set to False when Revit is available
+MOCK_MODE = False  # REAL MODE ENABLED - Requires Revit with pyRevit Routes
 MOCK_MODE_AUTO = True  # Auto-enable mock if bridge fails
 
 # Multi-version support (V3.0)

@@ -1,0 +1,23 @@
+{
+  "name": "aquabrain-local-bridge",
+  "version": "1.0.0",
+  "description": "Local bridge server for AquaBrain - WebSocket to System access",
+  "main": "bridge.js",
+  "scripts": {
+    "start": "node bridge.js",
+    "dev": "node --watch bridge.js"
+  },
+  "dependencies": {
+    "docx": "^9.5.1",
+    "docxtemplater": "^3.67.5",
+    "imap-simple": "^5.1.0",
+    "mailparser": "^3.9.0",
+    "nodemailer": "^7.0.11",
+    "pdf-lib": "^1.17.1",
+    "pizzip": "^3.2.0",
+    "uuid": "^13.0.0",
+    "ws": "^8.18.3"
+  },
+  "author": "AquaBrain",
+  "license": "MIT"
+}

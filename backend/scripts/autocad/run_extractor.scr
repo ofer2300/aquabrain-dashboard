@@ -1,0 +1,16 @@
+; ============================================================================
+; AQUABRAIN SPRINKLER EXTRACTOR - SCR Runner
+; For use with accoreconsole.exe (headless AutoCAD)
+; ============================================================================
+
+; Load the LISP extractor
+(load "sprinkler_extractor.lsp")
+
+; Run extraction
+EXTRACTSPRINKLERS
+
+; Save changes (if any)
+QSAVE
+
+; Exit
+QUIT Y

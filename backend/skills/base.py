@@ -133,6 +133,7 @@ class SkillCategory(str, Enum):
     REPORTING = "reporting"
     INTEGRATION = "integration"
     RPA = "rpa"  # Robotic Process Automation / Web Agents
+    RESEARCH = "research"  # Autonomous research using Local LLM
     CUSTOM = "custom"
 
 
@@ -384,3 +385,135 @@ def register_skill(skill_class: Type[AquaSkill]) -> Type[AquaSkill]:
     instance = skill_class()
     skill_registry.register(instance)
     return skill_class
+
+
+# ============================================================================
+# PIPELINE SYSTEM V3.3
+# ============================================================================
+
+class PipelineNode(BaseModel):
+    """A single node in a pipeline - represents one skill execution."""
+    id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8])
+    skill_id: str = Field(..., description="The skill to execute")
+    inputs: Dict[str, Any] = Field(default_factory=dict, description="Static inputs for this node")
+    input_mappings: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Map node inputs from previous node outputs: {local_input: prev_node_id.output_key}"
+    )
+    position: Dict[str, float] = Field(
+        default_factory=lambda: {"x": 0, "y": 0},
+        description="Visual position for UI"
+    )
+
+
+class PipelineEdge(BaseModel):
+    """Connection between two nodes."""
+    id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8])
+    source: str = Field(..., description="Source node ID")
+    target: str = Field(..., description="Target node ID")
+    source_handle: Optional[str] = Field(default=None, description="Output key from source")
+    target_handle: Optional[str] = Field(default=None, description="Input key for target")
+
+
+class PipelineDefinition(BaseModel):
+    """Complete pipeline definition - the visual graph."""
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str = Field(..., description="Pipeline name")
+    description: str = Field(default="", description="What this pipeline does")
+    nodes: List[PipelineNode] = Field(default_factory=list)
+    edges: List[PipelineEdge] = Field(default_factory=list)
+    # Metadata
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
+    author: str = Field(default="AquaBrain")
+    version: str = Field(default="1.0.0")
+    tags: List[str] = Field(default_factory=list)
+    category: str = Field(default="custom")
+    icon: str = Field(default="GitBranch")
+    color: str = Field(default="#9B59B6")
+
+
+class PipelineExecutionStatus(str, Enum):
+    """Status of pipeline execution."""
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class PipelineNodeResult(BaseModel):
+    """Result of a single node execution."""
+    node_id: str
+    skill_id: str
+    status: ExecutionStatus
+    started_at: datetime
+    completed_at: Optional[datetime] = None
+    duration_ms: Optional[int] = None
+    output: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+
+
+class PipelineExecutionResult(BaseModel):
+    """Complete result of a pipeline execution."""
+    pipeline_id: str
+    run_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    status: PipelineExecutionStatus
+    started_at: datetime = Field(default_factory=datetime.now)
+    completed_at: Optional[datetime] = None
+    total_duration_ms: Optional[int] = None
+    # Node results
+    node_results: List[PipelineNodeResult] = Field(default_factory=list)
+    current_node: Optional[str] = None
+    progress_percent: float = 0.0
+    # Final output (from last node)
+    final_output: Optional[Dict[str, Any]] = None
+    # Errors
+    error: Optional[str] = None
+    error_node: Optional[str] = None
+
+
+# ============================================================================
+# PIPELINE REGISTRY
+# ============================================================================
+
+class PipelineRegistry:
+    """
+    Central registry for all saved pipelines.
+    Works alongside SkillRegistry.
+    """
+    _instance: Optional['PipelineRegistry'] = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._pipelines: Dict[str, PipelineDefinition] = {}
+        return cls._instance
+
+    def save(self, pipeline: PipelineDefinition) -> None:
+        """Save or update a pipeline."""
+        pipeline.updated_at = datetime.now()
+        self._pipelines[pipeline.id] = pipeline
+
+    def get(self, pipeline_id: str) -> Optional[PipelineDefinition]:
+        """Get a pipeline by ID."""
+        return self._pipelines.get(pipeline_id)
+
+    def delete(self, pipeline_id: str) -> bool:
+        """Delete a pipeline."""
+        if pipeline_id in self._pipelines:
+            del self._pipelines[pipeline_id]
+            return True
+        return False
+
+    def list_all(self) -> List[PipelineDefinition]:
+        """List all pipelines."""
+        return list(self._pipelines.values())
+
+    def to_catalog(self) -> List[Dict[str, Any]]:
+        """Export catalog for frontend."""
+        return [p.model_dump() for p in self._pipelines.values()]
+
+
+# Global pipeline registry
+pipeline_registry = PipelineRegistry()

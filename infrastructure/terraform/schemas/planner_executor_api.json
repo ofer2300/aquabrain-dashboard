@@ -1,0 +1,345 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Planner-Executor API",
+    "description": "Plan-then-Execute orchestration for LOD 500 fire sprinkler design automation",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/create-plan": {
+      "post": {
+        "operationId": "createExecutionPlan",
+        "summary": "Create execution plan for sprinkler design project",
+        "description": "Analyzes project requirements and creates step-by-step execution plan with risk profile",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["project_id", "project_type"],
+                "properties": {
+                  "project_id": {
+                    "type": "string",
+                    "description": "Unique project identifier"
+                  },
+                  "project_type": {
+                    "type": "string",
+                    "enum": ["new_design", "renovation", "hydraulic_review", "compliance_audit"],
+                    "description": "Type of project"
+                  },
+                  "hazard_class": {
+                    "type": "string",
+                    "enum": ["Light", "Ordinary Group 1", "Ordinary Group 2", "Extra Group 1", "Extra Group 2"]
+                  },
+                  "building_info": {
+                    "type": "object",
+                    "properties": {
+                      "total_area_sqft": { "type": "number" },
+                      "floors": { "type": "integer" },
+                      "ceiling_height_ft": { "type": "number" },
+                      "construction_type": { "type": "string" }
+                    }
+                  },
+                  "input_files": {
+                    "type": "array",
+                    "description": "S3 URIs of input files (DXF, DWG, RVT)",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "s3_uri": { "type": "string" },
+                        "file_type": { "type": "string", "enum": ["dxf", "dwg", "rvt", "ifc", "pdf"] }
+                      }
+                    }
+                  },
+                  "water_supply": {
+                    "type": "object",
+                    "properties": {
+                      "available_pressure_psi": { "type": "number" },
+                      "available_flow_gpm": { "type": "number" },
+                      "source_type": { "type": "string", "enum": ["city_main", "fire_pump", "gravity_tank", "pressure_tank"] }
+                    }
+                  },
+                  "priority": {
+                    "type": "string",
+                    "enum": ["standard", "urgent", "critical"],
+                    "default": "standard"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Execution plan created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": ["PLAN_CREATED", "FAILED"]
+                    },
+                    "plan_id": {
+                      "type": "string",
+                      "description": "Unique plan identifier"
+                    },
+                    "risk_profile": {
+                      "type": "string",
+                      "enum": ["STANDARD", "HIGH_COMPLEXITY"],
+                      "description": "Detected risk level based on project parameters"
+                    },
+                    "execution_steps": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "step_number": { "type": "integer" },
+                          "action": { "type": "string" },
+                          "description": { "type": "string" },
+                          "action_group": { "type": "string", "enum": ["FileSanitization", "HydraulicEngine", "NFPAValidator", "PlannerExecutor"] },
+                          "dependencies": { "type": "array", "items": { "type": "integer" } },
+                          "estimated_duration_seconds": { "type": "integer" }
+                        }
+                      }
+                    },
+                    "total_steps": { "type": "integer" },
+                    "plan_s3_uri": {
+                      "type": "string",
+                      "description": "S3 URI where plan JSON is stored"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/execute-plan": {
+      "post": {
+        "operationId": "executePlan",
+        "summary": "Execute a previously created plan",
+        "description": "Runs all steps in the execution plan sequentially",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["plan_id"],
+                "properties": {
+                  "plan_id": {
+                    "type": "string",
+                    "description": "Plan ID returned from create-plan"
+                  },
+                  "start_from_step": {
+                    "type": "integer",
+                    "description": "Resume from specific step (default: 1)",
+                    "default": 1
+                  },
+                  "dry_run": {
+                    "type": "boolean",
+                    "description": "Validate plan without executing",
+                    "default": false
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Execution completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": ["COMPLETED", "PARTIAL", "FAILED"]
+                    },
+                    "steps_completed": { "type": "integer" },
+                    "steps_total": { "type": "integer" },
+                    "step_results": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "step_number": { "type": "integer" },
+                          "status": { "type": "string" },
+                          "output_s3_uri": { "type": "string" },
+                          "duration_seconds": { "type": "number" }
+                        }
+                      }
+                    },
+                    "failed_step": {
+                      "type": "object",
+                      "description": "Details of failed step if any",
+                      "properties": {
+                        "step_number": { "type": "integer" },
+                        "error": { "type": "string" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/verify-results": {
+      "post": {
+        "operationId": "verifyResults",
+        "summary": "Verify execution results and generate LOD 500 deliverables",
+        "description": "Runs forensic verification on completed execution and generates BOM",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["plan_id"],
+                "properties": {
+                  "plan_id": {
+                    "type": "string"
+                  },
+                  "verification_level": {
+                    "type": "string",
+                    "enum": ["basic", "standard", "forensic"],
+                    "default": "standard"
+                  },
+                  "generate_bom": {
+                    "type": "boolean",
+                    "description": "Generate Bill of Materials",
+                    "default": true
+                  },
+                  "safety_margin_percent": {
+                    "type": "number",
+                    "description": "Safety margin for hydraulic calculations",
+                    "default": 10
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Verification completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": ["VERIFIED", "FAILED_VERIFICATION", "NEEDS_REVIEW"]
+                    },
+                    "traffic_light": {
+                      "type": "string",
+                      "enum": ["GREEN", "YELLOW", "RED"]
+                    },
+                    "verification_results": {
+                      "type": "object",
+                      "properties": {
+                        "hydraulics": {
+                          "type": "object",
+                          "properties": {
+                            "status": { "type": "string" },
+                            "pressure_margin_psi": { "type": "number" },
+                            "max_velocity_fps": { "type": "number" },
+                            "velocity_compliant": { "type": "boolean" }
+                          }
+                        },
+                        "nfpa_compliance": {
+                          "type": "object",
+                          "properties": {
+                            "status": { "type": "string" },
+                            "violations_count": { "type": "integer" },
+                            "warnings_count": { "type": "integer" }
+                          }
+                        },
+                        "clashes": {
+                          "type": "object",
+                          "properties": {
+                            "hard_clashes": { "type": "integer" },
+                            "soft_clashes": { "type": "integer" },
+                            "status": { "type": "string" }
+                          }
+                        }
+                      }
+                    },
+                    "bom": {
+                      "type": "object",
+                      "description": "Bill of Materials LOD 500",
+                      "properties": {
+                        "total_pipe_length_ft": { "type": "number" },
+                        "pipe_breakdown": { "type": "object" },
+                        "sprinkler_count": { "type": "integer" },
+                        "fitting_count": { "type": "integer" },
+                        "valve_count": { "type": "integer" },
+                        "bom_s3_uri": { "type": "string" }
+                      }
+                    },
+                    "report_s3_uri": {
+                      "type": "string",
+                      "description": "S3 URI of final verification report"
+                    },
+                    "audit_hash": {
+                      "type": "string",
+                      "description": "SHA-256 hash for audit trail integrity"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/get-plan-status": {
+      "get": {
+        "operationId": "getPlanStatus",
+        "summary": "Get current status of a plan",
+        "description": "Returns execution status and progress for a plan",
+        "parameters": [
+          {
+            "name": "plan_id",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Plan status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "plan_id": { "type": "string" },
+                    "status": {
+                      "type": "string",
+                      "enum": ["PENDING", "IN_PROGRESS", "COMPLETED", "FAILED", "VERIFIED"]
+                    },
+                    "current_step": { "type": "integer" },
+                    "total_steps": { "type": "integer" },
+                    "progress_percent": { "type": "number" },
+                    "created_at": { "type": "string", "format": "date-time" },
+                    "updated_at": { "type": "string", "format": "date-time" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

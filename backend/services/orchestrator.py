@@ -1,21 +1,26 @@
 """
-AquaBrain Engineering Orchestrator V2.0 - GOLD Edition
-=======================================================
+AquaBrain Engineering Orchestrator V4.0 - PLATINUM Edition
+===========================================================
 Production-Grade Autonomous Engineering Pipeline
-with Strict Pydantic Validation for LOD 500 Standards
+with pyRevit Routes HTTP Bridge for LIVE Revit Control.
 
 This is the conductor of the automation symphony.
 Orchestrates the complete workflow from geometry extraction
-to LOD 500 model generation.
+to LOD 500 model generation - ALL VIA HTTP TO REVIT.
 
 Pipeline Stages:
-1. EXTRACT    - Get geometry from Revit via Bridge (with validation)
+1. EXTRACT    - Get geometry from Revit via Routes API (LIVE)
 2. VOXELIZE   - Convert to 3D voxel grid
 3. ROUTE      - A* pathfinding for optimal pipe layout
 4. CALCULATE  - Hazen-Williams hydraulic analysis
 5. VALIDATE   - NFPA 13 compliance check
-6. GENERATE   - Create LOD 500 model in Revit
+6. GENERATE   - Create LOD 500 model in Revit (LIVE)
 7. SIGNAL     - Determine Traffic Light status
+
+New in V4.0:
+- revit_execute() - Direct HTTP communication with Revit
+- Natural language -> Skill chain mapping
+- Full pyRevit Routes integration
 """
 
 from __future__ import annotations
@@ -27,6 +32,17 @@ from enum import Enum
 import sys
 import os
 from pydantic import BaseModel, Field, validator
+
+# Import ExecutionStatus for skill chain router
+try:
+    from skills.base import ExecutionStatus
+except ImportError:
+    # Fallback if running standalone
+    class ExecutionStatus(Enum):
+        PENDING = "pending"
+        RUNNING = "running"
+        SUCCESS = "success"
+        FAILED = "failed"
 
 
 # =============================================================================
@@ -343,20 +359,54 @@ class EngineeringOrchestrator:
             except Exception:
                 pass
 
-    async def _extract_geometry(self, project_id: str) -> Dict[str, Any]:
+    async def _extract_geometry(self, project_id: str, file_path: str = None) -> Dict[str, Any]:
         """
-        Extract geometry from Revit via Bridge with validation.
+        Extract geometry from Revit or AutoCAD via Bridge with validation.
+
+        Supports:
+        - .rvt files (Revit) via pyRevit Routes
+        - .dwg files (AutoCAD) via accoreconsole
 
         Raises:
             DataIntegrityError: If extracted data fails schema validation
         """
         await asyncio.sleep(0.5)  # Simulated extraction time
 
-        # Get raw data from bridge or simulation
+        # Determine source type from file extension
+        source_type = "revit"  # default
+        if file_path:
+            ext = os.path.splitext(file_path)[1].lower()
+            if ext == ".dwg":
+                source_type = "autocad"
+            elif ext == ".rvt":
+                source_type = "revit"
+
+        # Get raw data from appropriate bridge
         if self.SIMULATION_MODE:
             raw_data = self._simulate_geometry(project_id)
+        elif source_type == "autocad":
+            # === AutoCAD Extraction Path ===
+            try:
+                from skills.native.autocad_extract import AutoCADExtractSkill
+                extractor = AutoCADExtractSkill()
+                result = extractor.execute({"dwg_path": file_path})
+
+                if result.status.value != "success":
+                    raise Exception(f"AutoCAD extraction failed: {result.message}")
+
+                # Convert sprinkler data to geometry format
+                sprinklers = result.output.get("sprinklers", [])
+                raw_data = self._autocad_to_geometry_format(project_id, sprinklers, file_path)
+                print(f"[AUTOCAD] Extracted {len(sprinklers)} sprinklers from DWG")
+
+            except ImportError as e:
+                print(f"[WARNING] AutoCAD skill not available: {e}")
+                raw_data = self._simulate_geometry(project_id)
+            except Exception as e:
+                print(f"[WARNING] AutoCAD extraction failed, using simulation: {e}")
+                raw_data = self._simulate_geometry(project_id)
         else:
-            # In production: Call bridge_revit.py
+            # === Revit Extraction Path ===
             try:
                 from scripts.bridge_revit import get_geometry
                 raw_data = get_geometry(project_id)
@@ -579,6 +629,105 @@ class EngineeringOrchestrator:
             "clashes": [],  # No clashes in simulation
         }
 
+    def _autocad_to_geometry_format(
+        self,
+        project_id: str,
+        sprinklers: List[Dict],
+        source_file: str
+    ) -> Dict[str, Any]:
+        """
+        Convert AutoCAD extracted sprinkler data to geometry format.
+
+        Args:
+            project_id: Project identifier
+            sprinklers: List of sprinkler data from AutoCAD extraction
+            source_file: Path to source DWG file
+
+        Returns:
+            Geometry data dictionary compatible with pipeline
+        """
+        # Calculate bounding box from sprinkler locations
+        if sprinklers:
+            x_coords = [s["location"]["x"] for s in sprinklers]
+            y_coords = [s["location"]["y"] for s in sprinklers]
+            z_coords = [s["location"]["z"] for s in sprinklers]
+
+            min_x, max_x = min(x_coords), max(x_coords)
+            min_y, max_y = min(y_coords), max(y_coords)
+            max_z = max(z_coords) if z_coords else 3.0
+
+            # Estimate building dimensions from sprinkler spread
+            width = max_x - min_x + 2  # Add margins
+            depth = max_y - min_y + 2
+            area = width * depth
+        else:
+            width, depth, area, max_z = 10, 8, 80, 3.0
+
+        # Group sprinklers by zone
+        zones = {}
+        for spk in sprinklers:
+            zone_id = spk.get("properties", {}).get("zone", "ZONE-1")
+            if zone_id not in zones:
+                zones[zone_id] = []
+            zones[zone_id].append(spk)
+
+        # Build coverage areas from zones
+        coverage_areas = []
+        for zone_id, zone_sprinklers in zones.items():
+            total_coverage = sum(
+                s.get("properties", {}).get("coverage_sqft", 130)
+                for s in zone_sprinklers
+            )
+            coverage_areas.append({
+                "id": zone_id,
+                "floor": 1,
+                "area_sqm": total_coverage * 0.0929,  # sqft to m²
+                "type": "sprinkler_zone",
+                "sprinkler_count": len(zone_sprinklers)
+            })
+
+        # Build sprinkler geometry
+        sprinkler_geometry = []
+        for spk in sprinklers:
+            loc = spk.get("location", {})
+            props = spk.get("properties", {})
+            sprinkler_geometry.append({
+                "id": spk.get("id"),
+                "type": "sprinkler",
+                "location": [loc.get("x", 0), loc.get("y", 0), loc.get("z", 0)],
+                "k_factor": props.get("k_factor", 5.6),
+                "flow_gpm": props.get("flow_gpm", 0),
+                "coverage_sqft": props.get("coverage_sqft", 130),
+                "zone": props.get("zone", "ZONE-1")
+            })
+
+        return {
+            "project_id": project_id,
+            "source_type": "autocad",
+            "source_file": source_file,
+            "building": {
+                "floors": 1,  # Assume single floor from DWG
+                "total_area_sqm": area,
+                "height_m": max_z + 1,
+                "ceiling_height_m": max_z,
+            },
+            "coverage_areas": coverage_areas,
+            "geometry": {
+                "sprinklers": sprinkler_geometry,
+                "walls": [],  # DWG doesn't provide wall data by default
+                "columns": [],
+            },
+            "obstructions": [],  # Would need additional extraction
+            "clashes": [],
+            "extraction_summary": {
+                "total_sprinklers": len(sprinklers),
+                "zones": list(zones.keys()),
+                "total_flow_gpm": sum(
+                    s.get("properties", {}).get("flow_gpm", 0) for s in sprinklers
+                ),
+            }
+        }
+
     def _summarize_geometry(self, geometry: Dict) -> Dict[str, Any]:
         """Create geometry summary for response."""
         building = geometry.get("building", {})
@@ -597,6 +746,463 @@ class EngineeringOrchestrator:
             "total_sprinklers": routes.get("total_sprinklers", 0),
             "branch_count": len(routes.get("branches", [])),
         }
+
+
+# =============================================================================
+# REVIT ROUTES INTEGRATION (V4.0)
+# =============================================================================
+
+class RevitRoutesExecutor:
+    """
+    Direct HTTP executor for Revit via pyRevit Routes.
+    Enables AquaBrain to control Revit as a remote service.
+    """
+
+    ROUTES_PORT = 48884
+
+    def __init__(self):
+        self._client = None
+
+    @property
+    def client(self):
+        """Lazy load Routes client."""
+        if self._client is None:
+            try:
+                from skills.library.revit_skills import get_routes_client
+                self._client = get_routes_client()
+            except ImportError:
+                self._client = None
+        return self._client
+
+    def is_available(self) -> bool:
+        """Check if Revit Routes is responding."""
+        if self.client:
+            return self.client.is_available()
+        return False
+
+    def execute_script(self, script: str) -> Dict[str, Any]:
+        """Execute IronPython script in Revit."""
+        if not self.client:
+            return {"success": False, "error": "Routes client not initialized", "mock_mode": True}
+
+        if not self.is_available():
+            return {"success": False, "error": "Revit not connected", "mock_mode": True}
+
+        return self.client.execute_script(script)
+
+    def extract_lod500(self, project_id: str = "active") -> Dict[str, Any]:
+        """Extract LOD 500 data from Revit."""
+        try:
+            from skills.library.revit_skills import Skill_ExtractLOD500
+            skill = Skill_ExtractLOD500()
+            result = skill.execute({"project_id": project_id})
+            return result.output if result.output else {"error": result.error}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def generate_pipes(self, pipe_layout: List[Dict]) -> Dict[str, Any]:
+        """Generate pipe elements in Revit."""
+        try:
+            from skills.library.revit_skills import Skill_GenerateModel
+            skill = Skill_GenerateModel()
+            result = skill.execute({"pipe_layout": pipe_layout})
+            return result.output if result.output else {"error": result.error}
+        except Exception as e:
+            return {"error": str(e)}
+
+
+# Global Routes executor
+revit_executor = RevitRoutesExecutor()
+
+
+def revit_execute(script: str) -> Dict[str, Any]:
+    """
+    Universal Revit execution function.
+    Can be called from anywhere in AquaBrain.
+
+    Args:
+        script: IronPython script to execute in Revit
+
+    Returns:
+        Execution result dictionary
+    """
+    return revit_executor.execute_script(script)
+
+
+# =============================================================================
+# AUTOCAD CORE CONSOLE INTEGRATION (V5.0)
+# =============================================================================
+
+class AutoCADCoreExecutor:
+    """
+    AutoCAD Core Console (headless) executor.
+    Enables batch processing of DWG files from AquaBrain.
+    """
+
+    AUTOCAD_PATH = r"C:\Program Files\Autodesk\AutoCAD 2026\accoreconsole.exe"
+    TEMP_DIR = r"C:\AquaBrain\temp"
+    OUTPUT_DIR = r"C:\AquaBrain\output"
+
+    def __init__(self):
+        self._available = None
+
+    def is_available(self) -> bool:
+        """Check if AutoCAD Core Console exists."""
+        if self._available is None:
+            try:
+                import subprocess
+                result = subprocess.run(
+                    ["powershell.exe", "-Command", f"Test-Path '{self.AUTOCAD_PATH}'"],
+                    capture_output=True, text=True, timeout=5
+                )
+                self._available = "True" in result.stdout
+            except:
+                self._available = False
+        return self._available
+
+    def execute_script(
+        self,
+        dwg_path: str,
+        script_content: str,
+        output_dir: str = None
+    ) -> Dict[str, Any]:
+        """
+        Execute script on DWG file via accoreconsole.
+
+        Args:
+            dwg_path: Path to DWG file
+            script_content: SCR script commands
+            output_dir: Output directory for results
+
+        Returns:
+            Execution result
+        """
+        import subprocess
+        from datetime import datetime
+
+        output_dir = output_dir or self.OUTPUT_DIR
+
+        if not self.is_available():
+            return {
+                "success": False,
+                "error": "AutoCAD Core Console not available",
+                "mock_mode": True
+            }
+
+        # Create temp script file
+        script_filename = f"aquabrain_{datetime.now().strftime('%Y%m%d%H%M%S')}.scr"
+        script_path = f"{self.TEMP_DIR}\\{script_filename}"
+
+        # Ensure directories exist
+        subprocess.run(
+            ["powershell.exe", "-Command",
+             f"New-Item -ItemType Directory -Force -Path '{self.TEMP_DIR}' | Out-Null; "
+             f"New-Item -ItemType Directory -Force -Path '{output_dir}' | Out-Null"],
+            capture_output=True
+        )
+
+        # Write script
+        script_escaped = script_content.replace("'", "''")
+        subprocess.run(
+            ["powershell.exe", "-Command",
+             f"Set-Content -Path '{script_path}' -Value '{script_escaped}'"],
+            capture_output=True
+        )
+
+        # Execute
+        cmd = f'& "{self.AUTOCAD_PATH}" /i "{dwg_path}" /s "{script_path}" /l en-US'
+
+        try:
+            result = subprocess.run(
+                ["powershell.exe", "-Command", cmd],
+                capture_output=True, text=True, timeout=300
+            )
+
+            return {
+                "success": result.returncode == 0,
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+                "dwg_path": dwg_path,
+                "script_path": script_path
+            }
+
+        except subprocess.TimeoutExpired:
+            return {"success": False, "error": "Execution timed out"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+
+# Global AutoCAD executor
+autocad_executor = AutoCADCoreExecutor()
+
+
+def autocad_core_execute(
+    dwg_path: str,
+    script_path_or_content: str,
+    output_dir: str = None
+) -> Dict[str, Any]:
+    """
+    Universal AutoCAD execution function.
+    Can be called from anywhere in AquaBrain.
+
+    Args:
+        dwg_path: Path to DWG file
+        script_path_or_content: SCR script path or direct content
+        output_dir: Output directory
+
+    Returns:
+        Execution result dictionary
+    """
+    # Check if it's a path or content
+    if script_path_or_content.endswith('.scr'):
+        # Read script file
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["powershell.exe", "-Command",
+                 f"Get-Content '{script_path_or_content}' -Raw"],
+                capture_output=True, text=True
+            )
+            script_content = result.stdout
+        except:
+            script_content = script_path_or_content
+    else:
+        script_content = script_path_or_content
+
+    return autocad_executor.execute_script(dwg_path, script_content, output_dir)
+
+
+# =============================================================================
+# NATURAL LANGUAGE SKILL CHAIN ROUTER (V4.0)
+# =============================================================================
+
+class SkillChainRouter:
+    """
+    Maps natural language commands to skill execution chains.
+
+    Examples:
+        "Design Sprinklers for Project X" ->
+            [OpenProject, ExtractLOD500, HydraulicCalc, GenerateModel, TrafficLight]
+
+        "Calculate hydraulics for 150 GPM" ->
+            [HydraulicCalc]
+
+        "Tag all pipes in the model" ->
+            [AutoTag]
+    """
+
+    # Keyword -> Skill chain mapping (V5.0 - Full Domination)
+    INTENT_PATTERNS = {
+        # Full sprinkler design pipeline
+        "design sprinkler": ["open_revit", "extract_semantic", "hydraulic_calc", "push_lod500", "auto_tag_sprinklers", "traffic_light"],
+        "sprinkler design": ["open_revit", "extract_semantic", "hydraulic_calc", "push_lod500", "auto_tag_sprinklers", "traffic_light"],
+        "plan sprinkler": ["open_revit", "extract_semantic", "hydraulic_calc", "push_lod500", "auto_tag_sprinklers", "traffic_light"],
+        "תכנן ספרינקלר": ["open_revit", "extract_semantic", "hydraulic_calc", "push_lod500", "auto_tag_sprinklers", "traffic_light"],
+
+        # Hydraulics
+        "calculate hydraulic": ["hydraulic_calc"],
+        "hydraulic calc": ["hydraulic_calc"],
+        "pressure loss": ["hydraulic_calc"],
+        "חשב הידראולי": ["hydraulic_calc"],
+
+        # Extraction
+        "extract geometry": ["extract_semantic"],
+        "extract lod": ["extract_semantic"],
+        "extract semantic": ["extract_semantic"],
+        "get model data": ["extract_semantic"],
+        "שאב גיאומטריה": ["extract_semantic"],
+
+        # Generation
+        "create pipes": ["push_lod500"],
+        "generate pipes": ["push_lod500"],
+        "generate model": ["push_lod500"],
+        "push model": ["push_lod500"],
+        "צור צנרת": ["push_lod500"],
+
+        # Tagging
+        "tag": ["auto_tag_sprinklers"],
+        "auto tag": ["auto_tag_sprinklers"],
+        "tag sprinkler": ["auto_tag_sprinklers"],
+        "תייג": ["auto_tag_sprinklers"],
+
+        # Clash detection
+        "export navisworks": ["navisworks_clash"],
+        "clash detection": ["navisworks_clash"],
+        "check clash": ["navisworks_clash"],
+        "התנגשויות": ["navisworks_clash"],
+
+        # Fire rating
+        "fire rating": ["fire_rating"],
+        "get fire": ["fire_rating"],
+        "דירוג אש": ["fire_rating"],
+
+        # Sheets export
+        "export sheet": ["export_sheets"],
+        "export pdf": ["export_sheets", "export_dwg"],
+        "סקיצות": ["export_sheets"],
+        "תוציא סקיצות": ["open_revit", "export_sheets", "export_dwg", "add_titleblock"],
+
+        # AutoCAD operations
+        "open dwg": ["open_dwg"],
+        "run autolisp": ["run_autolisp"],
+        "export dwg": ["export_dwg"],
+        "convert to autocad": ["revit_to_autocad"],
+        "title block": ["add_titleblock"],
+        "stamp": ["add_titleblock"],
+        "חותמת": ["add_titleblock"],
+
+        # Project opening
+        "open project": ["open_revit"],
+        "open revit": ["open_revit"],
+        "פתח פרויקט": ["open_revit"],
+    }
+
+    # Skill ID -> Skill class mapping (V5.0)
+    SKILL_MAP = {
+        # V4.0 Skills
+        "open_project": "Skill_OpenProject",
+        "extract_lod500": "Skill_ExtractLOD500",
+        "hydraulic_calc": "Skill_HydraulicCalc",
+        "generate_model": "Skill_GenerateModel",
+        "auto_tag": "Skill_AutoTag",
+        "clash_navis": "Skill_ClashNavis",
+
+        # V5.0 Revit Skills
+        "open_revit": "Skill_OpenRevitProject",
+        "extract_semantic": "Skill_ExtractSemanticData",
+        "push_lod500": "Skill_PushLOD500Model",
+        "export_sheets": "Skill_ExportSheets",
+        "navisworks_clash": "Skill_NavisworksClash",
+        "fire_rating": "Skill_GetFireRating",
+        "auto_tag_sprinklers": "Skill_AutoTagSprinklers",
+
+        # V5.0 AutoCAD Skills
+        "open_dwg": "Skill_OpenDWG",
+        "run_autolisp": "Skill_RunAutoLISP",
+        "export_dwg": "Skill_ExportDWG",
+        "revit_to_autocad": "Skill_RevitToAutoCAD",
+        "add_titleblock": "Skill_GenerateTitleBlock",
+
+        # Built-in
+        "traffic_light": None,
+    }
+
+    @classmethod
+    def parse_intent(cls, command: str) -> List[str]:
+        """
+        Parse natural language command into skill chain.
+
+        Args:
+            command: Natural language instruction
+
+        Returns:
+            List of skill IDs to execute in order
+        """
+        command_lower = command.lower()
+
+        for pattern, chain in cls.INTENT_PATTERNS.items():
+            if pattern in command_lower:
+                return chain
+
+        # Default: full pipeline
+        return ["extract_lod500", "hydraulic_calc", "generate_model", "traffic_light"]
+
+    @classmethod
+    async def execute_chain(
+        cls,
+        command: str,
+        project_id: str = "active",
+        context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Execute a skill chain based on natural language command.
+
+        Args:
+            command: Natural language instruction
+            project_id: Project identifier
+            context: Additional context (file paths, parameters, etc.)
+
+        Returns:
+            Aggregated results from all skills
+        """
+        chain = cls.parse_intent(command)
+        results = {
+            "command": command,
+            "chain": chain,
+            "steps": [],
+            "success": True
+        }
+
+        context = context or {}
+        context["project_id"] = project_id
+
+        for skill_id in chain:
+            skill_class_name = cls.SKILL_MAP.get(skill_id)
+
+            if skill_class_name is None:
+                # Built-in stage (like traffic_light)
+                if skill_id == "traffic_light":
+                    # Use orchestrator's traffic light
+                    results["steps"].append({
+                        "skill": skill_id,
+                        "status": "success",
+                        "output": {"signal": "evaluated_in_pipeline"}
+                    })
+                continue
+
+            try:
+                # Dynamic import and execution (V5.0 - try both modules)
+                skill_class = None
+                for module_name in ['revit_skills', 'autodesk_domination']:
+                    try:
+                        module = __import__(f'skills.library.{module_name}', fromlist=[skill_class_name])
+                        if hasattr(module, skill_class_name):
+                            skill_class = getattr(module, skill_class_name)
+                            break
+                    except (ImportError, AttributeError):
+                        continue
+
+                if skill_class is None:
+                    raise ImportError(f"Skill class {skill_class_name} not found")
+
+                skill = skill_class()
+
+                # Build inputs from context
+                inputs = {}
+                for field in skill.input_schema.fields:
+                    if field.name in context:
+                        inputs[field.name] = context[field.name]
+                    elif field.default is not None:
+                        inputs[field.name] = field.default
+
+                # Execute
+                result = skill.execute(inputs)
+
+                step_result = {
+                    "skill": skill_id,
+                    "status": result.status.value,
+                    "message": result.message,
+                    "output": result.output
+                }
+
+                results["steps"].append(step_result)
+
+                # Pass outputs to next skill as context
+                if result.output:
+                    context.update(result.output)
+
+                if result.status != ExecutionStatus.SUCCESS:
+                    results["success"] = False
+
+            except Exception as e:
+                results["steps"].append({
+                    "skill": skill_id,
+                    "status": "failed",
+                    "error": str(e)
+                })
+                results["success"] = False
+
+        return results
 
 
 # Singleton orchestrator

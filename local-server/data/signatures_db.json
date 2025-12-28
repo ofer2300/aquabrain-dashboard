@@ -1,0 +1,73 @@
+{
+  "signatures": [
+    {
+      "id": "sig_arlozorov_1",
+      "projectName": "ארלוזורוב 20, הרצליה",
+      "docType": "אישור אכלוס",
+      "requestDate": "2024-12-08T00:00:00.000Z",
+      "status": "pending",
+      "originalFilePath": "/home/nimrodo/AquaProjects/aquabrain-dashboard/frontend/public/uploads/pending_signatures/ארלוזרוב 20 הרצליה - אישור אכלוס (1).pdf",
+      "processedFilePath": null,
+      "senderEmail": null,
+      "senderName": null,
+      "subject": "אישור אכלוס - ארלוזורוב 20",
+      "signaturePosition": { "x": 100, "y": 80, "width": 200, "height": 100 },
+      "notes": "מסמך אישור אכלוס לפרויקט ארלוזורוב 20 הרצליה",
+      "history": [
+        { "action": "created", "timestamp": "2024-12-08T00:00:00.000Z", "details": "Document added to signature queue" }
+      ]
+    },
+    {
+      "id": "sig_arlozorov_2",
+      "projectName": "ארלוזורוב 20, הרצליה",
+      "docType": "הצהרת מהנדס מים",
+      "requestDate": "2024-12-08T00:00:00.000Z",
+      "status": "pending",
+      "originalFilePath": "/home/nimrodo/AquaProjects/aquabrain-dashboard/frontend/public/uploads/pending_signatures/הצהרת מהנדס מים.pdf",
+      "processedFilePath": null,
+      "senderEmail": null,
+      "senderName": null,
+      "subject": "הצהרת מהנדס מים - ארלוזורוב 20",
+      "signaturePosition": { "x": 100, "y": 80, "width": 200, "height": 100 },
+      "notes": "הצהרת מהנדס מים לפרויקט",
+      "history": [
+        { "action": "created", "timestamp": "2024-12-08T00:00:00.000Z", "details": "Document added to signature queue" }
+      ]
+    },
+    {
+      "id": "sig_arlozorov_3",
+      "projectName": "ארלוזורוב 20, הרצליה",
+      "docType": "אישור מתכנן אינסטלציה לגמר",
+      "requestDate": "2024-12-08T00:00:00.000Z",
+      "status": "pending",
+      "originalFilePath": "/home/nimrodo/AquaProjects/aquabrain-dashboard/frontend/public/uploads/pending_signatures/אישור מתכנן אינסטלציה לגמר-תאגיד.pdf",
+      "processedFilePath": null,
+      "senderEmail": null,
+      "senderName": null,
+      "subject": "אישור מתכנן אינסטלציה לגמר - תאגיד",
+      "signaturePosition": { "x": 100, "y": 80, "width": 200, "height": 100 },
+      "notes": "אישור מתכנן אינסטלציה לגמר עבור תאגיד המים",
+      "history": [
+        { "action": "created", "timestamp": "2024-12-08T00:00:00.000Z", "details": "Document added to signature queue" }
+      ]
+    },
+    {
+      "id": "sig_arlozorov_4",
+      "projectName": "ארלוזורוב 20, הרצליה",
+      "docType": "תצהיר מהנדס מתכנן אינסטלציה",
+      "requestDate": "2024-12-08T00:00:00.000Z",
+      "status": "pending",
+      "originalFilePath": "/home/nimrodo/AquaProjects/aquabrain-dashboard/frontend/public/uploads/pending_signatures/תצהיר-מהנדס-מתכנן-אינסטלציה-תיעול-לאחר-ביצוע (1).pdf",
+      "processedFilePath": null,
+      "senderEmail": null,
+      "senderName": null,
+      "subject": "תצהיר מהנדס מתכנן אינסטלציה תיעול לאחר ביצוע",
+      "signaturePosition": { "x": 100, "y": 80, "width": 200, "height": 100 },
+      "notes": "תצהיר מהנדס מתכנן אינסטלציה ותיעול לאחר ביצוע",
+      "history": [
+        { "action": "created", "timestamp": "2024-12-08T00:00:00.000Z", "details": "Document added to signature queue" }
+      ]
+    }
+  ],
+  "lastUpdated": "2024-12-08T00:00:00.000Z"
+}

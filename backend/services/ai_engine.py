@@ -1,25 +1,33 @@
 """
-AquaBrain AI Engine - Multi-Model Support
-==========================================
+AquaBrain AI Engine - Hybrid Local-First Architecture
+======================================================
 
-מנוע AI עם תמיכה ב:
-- Claude (Anthropic) - Haiku, Sonnet, Opus
-- Gemini (Google) - Flash, Pro
+Multi-model support with Smart Routing:
+- Ollama (Local) - RTX 4060 Ti 16GB VRAM - Zero latency
+- Gemini (Cloud) - Fallback for complex reasoning
+- Claude (Cloud) - Optional premium provider
 
-שימוש:
-    from services.ai_engine import ask_ai, ask_aquabrain
+Smart Router Logic:
+- "python", "code", "script", "private" → Ollama (Local)
+- Complex reasoning, general knowledge → Gemini (Cloud)
+- Fallback: If Local fails → Cloud
 
-    # שאלה עם Claude (ברירת מחדל)
-    response = ask_ai("מה זה NFPA 13?")
+Usage:
+    from services.ai_engine import ask_ai, ask_aquabrain, smart_ask
 
-    # שאלה עם Gemini
-    response = ask_ai("מה זה NFPA 13?", provider="gemini")
+    # Smart routing (auto-selects provider)
+    response = smart_ask("Write a Python script to parse JSON")
 
-    # שאלה הנדסית עם AquaBrain
+    # Direct provider selection
+    response = ask_ai("מה זה NFPA 13?", provider="ollama")
+    response = ask_ai("Explain quantum physics", provider="gemini")
+
+    # AquaBrain engineering mode
     response = ask_aquabrain("חשב אובדן לחץ בצינור 2 אינץ'")
 """
 
 import os
+import re
 import requests
 from typing import List, Dict, Optional, Literal
 from dotenv import load_dotenv
@@ -33,40 +41,240 @@ load_dotenv()
 # ============================================================
 
 class AIProvider(str, Enum):
-    CLAUDE = "claude"
-    GEMINI = "gemini"
-    GPT = "gpt"  # לעתיד
+    OLLAMA = "ollama"    # Local - RTX 4060 Ti
+    GEMINI = "gemini"    # Cloud - Google
+    CLAUDE = "claude"    # Cloud - Anthropic
+    GPT = "gpt"          # Future
+
+
+class OllamaModel(str, Enum):
+    QWEN_CODER = "qwen2.5-coder:7b"      # Code generation (default)
+    QWEN_14B = "qwen2.5:14b"             # General purpose
+    CODELLAMA = "codellama:7b"           # Code specialist
+    DEEPSEEK = "deepseek-coder:6.7b"     # Alternative coder
 
 
 class ClaudeModel(str, Enum):
-    HAIKU = "claude-3-5-haiku-20241022"      # מהיר וזול
-    SONNET = "claude-sonnet-4-20250514"       # מאוזן - מומלץ!
-    OPUS = "claude-opus-4-20250514"           # הכי חזק
+    HAIKU = "claude-3-5-haiku-20241022"
+    SONNET = "claude-sonnet-4-20250514"
+    OPUS = "claude-opus-4-20250514"
 
 
 class GeminiModel(str, Enum):
-    FLASH = "gemini-2.0-flash"       # מהיר - 1500/day
-    FLASH_25 = "gemini-2.5-flash"    # מאוזן - 500/day
-    PRO = "gemini-2.5-pro"           # חזק - 25/day
+    FLASH = "gemini-2.0-flash"
+    FLASH_25 = "gemini-2.5-flash"
+    PRO = "gemini-2.5-pro"
 
 
-# Default models
-DEFAULT_PROVIDER = "gemini"  # Gemini as default (free tier)
+# Default configuration
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+LOCAL_MODEL = OllamaModel.QWEN_CODER.value
+
+DEFAULT_PROVIDER = "ollama"  # Local-first!
+DEFAULT_OLLAMA_MODEL = OllamaModel.QWEN_CODER.value
+DEFAULT_GEMINI_MODEL = GeminiModel.FLASH_25.value
 DEFAULT_CLAUDE_MODEL = ClaudeModel.SONNET.value
-DEFAULT_GEMINI_MODEL = GeminiModel.FLASH_25.value  # 500 req/day
+
+# Smart routing keywords
+LOCAL_KEYWORDS = [
+    "python", "code", "script", "function", "class", "def ",
+    "import", "variable", "loop", "algorithm", "debug",
+    "private", "confidential", "internal", "secret",
+    "research", "summarize", "analyze code", "refactor",
+    "write code", "create function", "implement", "generate code"
+]
+
+# Keywords that prefer cloud (strategy/reasoning)
+CLOUD_KEYWORDS = [
+    "why", "explain", "strategy", "compare", "recommend",
+    "best practice", "architecture", "design pattern",
+    "trade-off", "pros and cons", "analyze options"
+]
 
 
 # ============================================================
-# Claude Client
+# Ollama Client (Local LLM)
+# ============================================================
+
+class OllamaClient:
+    """Client for local Ollama inference on RTX 4060 Ti."""
+
+    def __init__(self, base_url: str = OLLAMA_BASE_URL):
+        self.base_url = base_url.rstrip('/')
+
+    def is_available(self) -> bool:
+        """Check if Ollama server is running."""
+        try:
+            response = requests.get(f"{self.base_url}/api/tags", timeout=2)
+            return response.status_code == 200
+        except:
+            return False
+
+    def list_models(self) -> List[str]:
+        """List available models."""
+        try:
+            response = requests.get(f"{self.base_url}/api/tags", timeout=5)
+            if response.status_code == 200:
+                data = response.json()
+                return [m["name"] for m in data.get("models", [])]
+        except:
+            pass
+        return []
+
+    def generate(
+        self,
+        prompt: str,
+        model: str = LOCAL_MODEL,
+        system_prompt: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 4096,
+        num_ctx: int = 4096
+    ) -> str:
+        """Generate response using local LLM."""
+
+        url = f"{self.base_url}/api/generate"
+
+        payload = {
+            "model": model,
+            "prompt": prompt,
+            "stream": False,
+            "options": {
+                "temperature": temperature,
+                "num_predict": max_tokens,
+                "num_ctx": num_ctx  # Context window size
+            }
+        }
+
+        if system_prompt:
+            payload["system"] = system_prompt
+
+        response = requests.post(url, json=payload, timeout=120)
+        response.raise_for_status()
+
+        data = response.json()
+        return data.get("response", "")
+
+    def chat(
+        self,
+        messages: List[Dict[str, str]],
+        model: str = LOCAL_MODEL,
+        system_prompt: Optional[str] = None
+    ) -> str:
+        """Multi-turn chat with local LLM."""
+
+        url = f"{self.base_url}/api/chat"
+
+        formatted_messages = []
+        if system_prompt:
+            formatted_messages.append({"role": "system", "content": system_prompt})
+
+        for msg in messages:
+            formatted_messages.append({
+                "role": msg["role"],
+                "content": msg["content"]
+            })
+
+        payload = {
+            "model": model,
+            "messages": formatted_messages,
+            "stream": False
+        }
+
+        response = requests.post(url, json=payload, timeout=120)
+        response.raise_for_status()
+
+        data = response.json()
+        return data.get("message", {}).get("content", "")
+
+
+# ============================================================
+# Gemini Client (Cloud)
+# ============================================================
+
+class GeminiClient:
+    """Client for Google Gemini API."""
+
+    MODELS = {
+        "pro": "gemini-2.5-pro",
+        "flash": "gemini-2.5-flash",
+        "fast": "gemini-2.0-flash",
+    }
+
+    def __init__(self, api_key: Optional[str] = None):
+        self.api_key = api_key or os.getenv("GEMINI_API_KEY")
+        if not self.api_key:
+            raise ValueError("❌ GEMINI_API_KEY not set!")
+        self.base_url = "https://generativelanguage.googleapis.com/v1beta"
+
+    def generate(
+        self,
+        prompt: str,
+        model: str = DEFAULT_GEMINI_MODEL,
+        system_prompt: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 4096
+    ) -> str:
+        """Generate content with Gemini."""
+
+        url = f"{self.base_url}/models/{model}:generateContent?key={self.api_key}"
+
+        full_prompt = prompt
+        if system_prompt:
+            full_prompt = f"[System Instructions]\n{system_prompt}\n\n[User Query]\n{prompt}"
+
+        payload = {
+            "contents": [{"parts": [{"text": full_prompt}]}],
+            "generationConfig": {
+                "temperature": temperature,
+                "maxOutputTokens": max_tokens,
+            }
+        }
+
+        response = requests.post(url, json=payload, timeout=120)
+        response.raise_for_status()
+
+        data = response.json()
+        return data["candidates"][0]["content"]["parts"][0]["text"]
+
+    def chat(
+        self,
+        messages: List[Dict[str, str]],
+        model: str = DEFAULT_GEMINI_MODEL,
+        system_prompt: Optional[str] = None
+    ) -> str:
+        """Multi-turn chat with Gemini."""
+
+        url = f"{self.base_url}/models/{model}:generateContent?key={self.api_key}"
+
+        contents = []
+        if system_prompt:
+            contents.append({"role": "user", "parts": [{"text": f"[System]\n{system_prompt}"}]})
+            contents.append({"role": "model", "parts": [{"text": "Understood."}]})
+
+        for msg in messages:
+            role = "user" if msg["role"] == "user" else "model"
+            contents.append({"role": role, "parts": [{"text": msg["content"]}]})
+
+        payload = {"contents": contents}
+
+        response = requests.post(url, json=payload, timeout=120)
+        response.raise_for_status()
+
+        data = response.json()
+        return data["candidates"][0]["content"]["parts"][0]["text"]
+
+
+# ============================================================
+# Claude Client (Cloud)
 # ============================================================
 
 class ClaudeClient:
-    """קליינט ל-Anthropic Claude API."""
+    """Client for Anthropic Claude API."""
 
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
         if not self.api_key:
-            raise ValueError("❌ ANTHROPIC_API_KEY לא הוגדר!")
+            raise ValueError("❌ ANTHROPIC_API_KEY not set!")
         self.base_url = "https://api.anthropic.com/v1"
         self.api_version = "2023-06-01"
 
@@ -78,7 +286,7 @@ class ClaudeClient:
         temperature: float = 0.7,
         max_tokens: int = 4096
     ) -> str:
-        """יצירת תוכן עם Claude."""
+        """Generate content with Claude."""
 
         headers = {
             "Content-Type": "application/json",
@@ -94,7 +302,6 @@ class ClaudeClient:
 
         if system_prompt:
             payload["system"] = system_prompt
-
         if temperature != 1.0:
             payload["temperature"] = temperature
 
@@ -115,7 +322,7 @@ class ClaudeClient:
         model: str = DEFAULT_CLAUDE_MODEL,
         system_prompt: Optional[str] = None
     ) -> str:
-        """צ'אט רב-תורות עם Claude."""
+        """Multi-turn chat with Claude."""
 
         headers = {
             "Content-Type": "application/json",
@@ -123,14 +330,10 @@ class ClaudeClient:
             "anthropic-version": self.api_version
         }
 
-        # המרת פורמט הודעות
         formatted_messages = []
         for msg in messages:
             role = "user" if msg["role"] == "user" else "assistant"
-            formatted_messages.append({
-                "role": role,
-                "content": msg["content"]
-            })
+            formatted_messages.append({"role": role, "content": msg["content"]})
 
         payload = {
             "model": model,
@@ -154,151 +357,154 @@ class ClaudeClient:
 
 
 # ============================================================
-# Gemini Client
+# Client Singletons
 # ============================================================
 
-class GeminiClient:
-    """קליינט ל-Google Gemini API."""
-
-    # מודלים זמינים (Free Tier)
-    MODELS = {
-        "pro": "gemini-2.5-pro",        # הכי חזק - 25 בקשות/יום
-        "flash": "gemini-2.5-flash",    # מאוזן - 500 בקשות/יום (ברירת מחדל)
-        "fast": "gemini-2.0-flash",     # הכי מהיר - 1500 בקשות/יום
-    }
-
-    def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key or os.getenv("GEMINI_API_KEY")
-        if not self.api_key:
-            raise ValueError("❌ GEMINI_API_KEY לא הוגדר!")
-        self.base_url = "https://generativelanguage.googleapis.com/v1beta"
-
-    def generate(
-        self,
-        prompt: str,
-        model: str = DEFAULT_GEMINI_MODEL,
-        system_prompt: Optional[str] = None,
-        temperature: float = 0.7,
-        max_tokens: int = 4096
-    ) -> str:
-        """יצירת תוכן עם Gemini."""
-
-        url = f"{self.base_url}/models/{model}:generateContent?key={self.api_key}"
-
-        # בניית הפרומפט עם system instructions
-        full_prompt = prompt
-        if system_prompt:
-            full_prompt = f"[System Instructions]\n{system_prompt}\n\n[User Query]\n{prompt}"
-
-        payload = {
-            "contents": [{
-                "parts": [{"text": full_prompt}]
-            }],
-            "generationConfig": {
-                "temperature": temperature,
-                "maxOutputTokens": max_tokens,
-            }
-        }
-
-        response = requests.post(url, json=payload, timeout=120)
-        response.raise_for_status()
-
-        data = response.json()
-        return data["candidates"][0]["content"]["parts"][0]["text"]
-
-    def chat(
-        self,
-        messages: List[Dict[str, str]],
-        model: str = DEFAULT_GEMINI_MODEL,
-        system_prompt: Optional[str] = None
-    ) -> str:
-        """צ'אט רב-תורות עם Gemini."""
-
-        url = f"{self.base_url}/models/{model}:generateContent?key={self.api_key}"
-
-        contents = []
-
-        if system_prompt:
-            contents.append({
-                "role": "user",
-                "parts": [{"text": f"[System Instructions]\n{system_prompt}"}]
-            })
-            contents.append({
-                "role": "model",
-                "parts": [{"text": "מובן. אפעל לפי ההוראות."}]
-            })
-
-        for msg in messages:
-            role = "user" if msg["role"] == "user" else "model"
-            contents.append({
-                "role": role,
-                "parts": [{"text": msg["content"]}]
-            })
-
-        payload = {"contents": contents}
-
-        response = requests.post(url, json=payload, timeout=120)
-        response.raise_for_status()
-
-        data = response.json()
-        return data["candidates"][0]["content"]["parts"][0]["text"]
-
-
-# ============================================================
-# Unified AI Interface
-# ============================================================
-
-_claude_client = None
+_ollama_client = None
 _gemini_client = None
+_claude_client = None
 
 
-def get_claude_client() -> ClaudeClient:
-    """מחזיר instance יחיד של Claude client."""
-    global _claude_client
-    if _claude_client is None:
-        _claude_client = ClaudeClient()
-    return _claude_client
+def get_ollama_client() -> OllamaClient:
+    """Get Ollama client singleton."""
+    global _ollama_client
+    if _ollama_client is None:
+        _ollama_client = OllamaClient()
+    return _ollama_client
 
 
 def get_gemini_client() -> GeminiClient:
-    """מחזיר instance יחיד של Gemini client."""
+    """Get Gemini client singleton."""
     global _gemini_client
     if _gemini_client is None:
         _gemini_client = GeminiClient()
     return _gemini_client
 
 
+def get_claude_client() -> ClaudeClient:
+    """Get Claude client singleton."""
+    global _claude_client
+    if _claude_client is None:
+        _claude_client = ClaudeClient()
+    return _claude_client
+
+
+# ============================================================
+# Smart Router
+# ============================================================
+
+def should_use_local(prompt: str) -> bool:
+    """
+    Determine if a prompt should be routed to local LLM.
+
+    Routes to LOCAL (Ollama) if:
+    - Contains code-related keywords
+    - Mentions privacy/confidential
+    - Research/analysis tasks
+
+    Routes to CLOUD (Gemini) if:
+    - Contains strategy/reasoning keywords
+    - Asks "why", "explain", "compare"
+    """
+    prompt_lower = prompt.lower()
+
+    # First check for CLOUD keywords (strategy/reasoning takes priority)
+    for keyword in CLOUD_KEYWORDS:
+        if keyword in prompt_lower:
+            return False  # Use cloud for strategy/reasoning
+
+    # Then check for LOCAL keywords
+    for keyword in LOCAL_KEYWORDS:
+        if keyword in prompt_lower:
+            return True
+
+    # Check for code blocks
+    if "```" in prompt or "def " in prompt or "class " in prompt:
+        return True
+
+    # Default to cloud for general queries
+    return False
+
+
+def smart_ask(
+    prompt: str,
+    system_prompt: Optional[str] = None,
+    temperature: float = 0.7,
+    fallback: bool = True
+) -> str:
+    """
+    Intelligent routing between Local and Cloud providers.
+
+    Auto-selects provider based on prompt content:
+    - Code/Python/Private → Ollama (Local)
+    - General/Complex → Gemini (Cloud)
+
+    With fallback: If local fails, automatically tries cloud.
+
+    Args:
+        prompt: The user's question/request
+        system_prompt: Optional system instructions
+        temperature: Creativity level (0.0-1.0)
+        fallback: If True, falls back to cloud on local failure
+
+    Returns:
+        AI response string
+    """
+    use_local = should_use_local(prompt)
+
+    if use_local:
+        try:
+            ollama = get_ollama_client()
+            if ollama.is_available():
+                return ollama.generate(prompt, LOCAL_MODEL, system_prompt, temperature)
+            elif fallback:
+                print("⚠️ Ollama not available, falling back to Gemini")
+        except Exception as e:
+            if fallback:
+                print(f"⚠️ Local LLM failed ({e}), falling back to Gemini")
+            else:
+                raise
+
+    # Use cloud (Gemini)
+    gemini = get_gemini_client()
+    return gemini.generate(prompt, DEFAULT_GEMINI_MODEL, system_prompt, temperature)
+
+
+# ============================================================
+# Unified AI Interface
+# ============================================================
+
 def ask_ai(
     prompt: str,
-    provider: Literal["claude", "gemini"] = DEFAULT_PROVIDER,
+    provider: Literal["ollama", "gemini", "claude"] = DEFAULT_PROVIDER,
     model: Optional[str] = None,
     system_prompt: Optional[str] = None,
     temperature: float = 0.7
 ) -> str:
     """
-    שאלה אחודה לכל ה-AI providers.
+    Unified AI query interface.
 
     Args:
-        prompt: השאלה
-        provider: "claude" או "gemini" (ברירת מחדל: gemini)
-        model: שם המודל (אופציונלי - ייקח ברירת מחדל)
-        system_prompt: הוראות מערכת
-        temperature: רמת יצירתיות (0.0-1.0)
+        prompt: The question/request
+        provider: "ollama" (local), "gemini" (cloud), or "claude" (cloud)
+        model: Specific model (optional - uses default)
+        system_prompt: System instructions
+        temperature: Creativity (0.0-1.0)
 
-    דוגמאות:
-        # Gemini (ברירת מחדל - 500 req/day free)
-        response = ask_ai("מה זה NFPA 13?")
+    Examples:
+        # Local (RTX 4060 Ti)
+        response = ask_ai("Write Python code", provider="ollama")
 
-        # Claude
-        response = ask_ai("מה זה NFPA 13?", provider="claude")
+        # Cloud (Gemini - default fallback)
+        response = ask_ai("Explain NFPA 13", provider="gemini")
 
-        # מודל ספציפי
-        response = ask_ai("...", provider="gemini", model="gemini-2.5-pro")
+        # Cloud (Claude - premium)
+        response = ask_ai("Complex analysis", provider="claude")
     """
 
-    if provider == "claude":
-        client = get_claude_client()
-        model = model or DEFAULT_CLAUDE_MODEL
+    if provider == "ollama":
+        client = get_ollama_client()
+        model = model or DEFAULT_OLLAMA_MODEL
         return client.generate(prompt, model, system_prompt, temperature)
 
     elif provider == "gemini":
@@ -306,21 +512,26 @@ def ask_ai(
         model = model or DEFAULT_GEMINI_MODEL
         return client.generate(prompt, model, system_prompt, temperature)
 
+    elif provider == "claude":
+        client = get_claude_client()
+        model = model or DEFAULT_CLAUDE_MODEL
+        return client.generate(prompt, model, system_prompt, temperature)
+
     else:
-        raise ValueError(f"Provider לא נתמך: {provider}")
+        raise ValueError(f"Unknown provider: {provider}")
 
 
 def chat_ai(
     messages: List[Dict[str, str]],
-    provider: Literal["claude", "gemini"] = DEFAULT_PROVIDER,
+    provider: Literal["ollama", "gemini", "claude"] = DEFAULT_PROVIDER,
     model: Optional[str] = None,
     system_prompt: Optional[str] = None
 ) -> str:
-    """צ'אט רב-תורות אחוד."""
+    """Multi-turn chat with any provider."""
 
-    if provider == "claude":
-        client = get_claude_client()
-        model = model or DEFAULT_CLAUDE_MODEL
+    if provider == "ollama":
+        client = get_ollama_client()
+        model = model or DEFAULT_OLLAMA_MODEL
         return client.chat(messages, model, system_prompt)
 
     elif provider == "gemini":
@@ -328,12 +539,17 @@ def chat_ai(
         model = model or DEFAULT_GEMINI_MODEL
         return client.chat(messages, model, system_prompt)
 
+    elif provider == "claude":
+        client = get_claude_client()
+        model = model or DEFAULT_CLAUDE_MODEL
+        return client.chat(messages, model, system_prompt)
+
     else:
-        raise ValueError(f"Provider לא נתמך: {provider}")
+        raise ValueError(f"Unknown provider: {provider}")
 
 
 # ============================================================
-# AquaBrain Specialized Functions
+# AquaBrain Engineering Functions
 # ============================================================
 
 AQUABRAIN_SYSTEM_PROMPT = """אתה AquaBrain - מומחה להנדסת מערכות כיבוי אש וספרינקלרים.
@@ -359,39 +575,29 @@ AQUABRAIN_SYSTEM_PROMPT = """אתה AquaBrain - מומחה להנדסת מערכ
 
 def ask_aquabrain(
     question: str,
-    provider: Literal["claude", "gemini"] = DEFAULT_PROVIDER,
+    provider: Literal["ollama", "gemini", "claude"] = "gemini",  # Cloud for engineering
     model: Optional[str] = None
 ) -> str:
     """
-    שאלה הנדסית ל-AquaBrain.
+    Engineering-focused AI assistant.
 
-    דוגמאות:
-        response = ask_aquabrain("חשב אובדן לחץ בצינור 2 אינץ' באורך 30 מטר")
-        response = ask_aquabrain("מה הדרישות לספרינקלרים בחניון תת-קרקעי?")
-        response = ask_aquabrain("...", provider="claude")  # עם Claude
+    Uses cloud by default for complex engineering reasoning.
     """
     return ask_ai(
         prompt=question,
         provider=provider,
         model=model,
         system_prompt=AQUABRAIN_SYSTEM_PROMPT,
-        temperature=0.3  # יותר דייקני למשימות הנדסיות
+        temperature=0.3  # More precise for engineering
     )
 
 
 def analyze_ifc_element(
     element_data: Dict,
     analysis_type: str = "compliance",
-    provider: Literal["claude", "gemini"] = DEFAULT_PROVIDER
+    provider: Literal["ollama", "gemini", "claude"] = "gemini"
 ) -> str:
-    """
-    ניתוח אלמנט IFC.
-
-    Args:
-        element_data: נתוני האלמנט מקובץ IFC
-        analysis_type: סוג הניתוח (compliance, hydraulic, spacing)
-        provider: ה-AI provider
-    """
+    """Analyze IFC/BIM element for compliance."""
     import json
 
     prompt = f"""נתח את אלמנט ה-IFC הבא:
@@ -412,37 +618,26 @@ def analyze_ifc_element(
 
 
 # ============================================================
-# Legacy Functions (תאימות לאחור)
+# Legacy Compatibility
 # ============================================================
 
-def ask_gemini(
-    prompt: str,
-    model: str = DEFAULT_GEMINI_MODEL,
-    temperature: float = 0.7
-) -> str:
-    """תאימות לאחור - משתמש ב-ask_ai עם Gemini."""
+def ask_gemini(prompt: str, model: str = DEFAULT_GEMINI_MODEL, temperature: float = 0.7) -> str:
+    """Legacy: Use ask_ai with gemini provider."""
     return ask_ai(prompt, provider="gemini", model=model, temperature=temperature)
 
 
-def ask_claude(
-    prompt: str,
-    model: str = DEFAULT_CLAUDE_MODEL,
-    temperature: float = 0.7
-) -> str:
-    """תאימות לאחור - משתמש ב-ask_ai עם Claude."""
+def ask_claude(prompt: str, model: str = DEFAULT_CLAUDE_MODEL, temperature: float = 0.7) -> str:
+    """Legacy: Use ask_ai with claude provider."""
     return ask_ai(prompt, provider="claude", model=model, temperature=temperature)
 
 
-def chat_with_gemini(
-    messages: List[Dict[str, str]],
-    model: str = DEFAULT_GEMINI_MODEL
-) -> str:
-    """תאימות לאחור - צ'אט עם Gemini."""
+def chat_with_gemini(messages: List[Dict[str, str]], model: str = DEFAULT_GEMINI_MODEL) -> str:
+    """Legacy: Use chat_ai with gemini provider."""
     return chat_ai(messages, provider="gemini", model=model)
 
 
 def get_client() -> GeminiClient:
-    """תאימות לאחור - מחזיר Gemini client."""
+    """Legacy: Get default client (Gemini)."""
     return get_gemini_client()
 
 
@@ -453,13 +648,19 @@ def get_client() -> GeminiClient:
 __all__ = [
     # Providers & Models
     'AIProvider',
+    'OllamaModel',
     'ClaudeModel',
     'GeminiModel',
     # Clients
+    'OllamaClient',
     'ClaudeClient',
     'GeminiClient',
-    'get_claude_client',
+    'get_ollama_client',
     'get_gemini_client',
+    'get_claude_client',
+    # Smart Router
+    'smart_ask',
+    'should_use_local',
     # Unified Interface
     'ask_ai',
     'chat_ai',
@@ -467,6 +668,9 @@ __all__ = [
     'ask_aquabrain',
     'analyze_ifc_element',
     'AQUABRAIN_SYSTEM_PROMPT',
+    # Constants
+    'OLLAMA_BASE_URL',
+    'LOCAL_MODEL',
     # Legacy
     'ask_gemini',
     'ask_claude',
@@ -480,71 +684,72 @@ __all__ = [
 # ============================================================
 
 def test_connection(provider: str = "all"):
-    """בדיקת חיבור ל-AI providers."""
+    """Test AI provider connections."""
 
     print("=" * 60)
-    print("🧠 AquaBrain - בדיקת חיבור AI (Multi-Model)")
+    print("🧠 AquaBrain AI Engine - Hybrid Local-First Architecture")
     print("=" * 60)
 
     results = {}
 
-    # Test Gemini (default, free tier)
-    if provider in ["all", "gemini"]:
-        print("\n[Gemini] בודק חיבור...")
+    # Test Ollama (Local)
+    if provider in ["all", "ollama"]:
+        print("\n[Ollama] Testing local LLM (RTX 4060 Ti)...")
         try:
-            response = ask_ai(
-                "Say 'Gemini connected!' in exactly 2 words.",
-                provider="gemini"
-            )
-            print(f"    ✅ Gemini: {response.strip()}")
+            ollama = get_ollama_client()
+            if ollama.is_available():
+                models = ollama.list_models()
+                print(f"    ✅ Ollama connected! Models: {models[:3]}...")
+                response = ollama.generate("Say 'Local OK' in 2 words.", LOCAL_MODEL)
+                print(f"    📝 Response: {response.strip()[:50]}")
+                results["ollama"] = True
+            else:
+                print("    ⚠️ Ollama server not running")
+                results["ollama"] = False
+        except Exception as e:
+            print(f"    ❌ Ollama: {e}")
+            results["ollama"] = False
+
+    # Test Gemini (Cloud)
+    if provider in ["all", "gemini"]:
+        print("\n[Gemini] Testing cloud connection...")
+        try:
+            response = ask_ai("Say 'Cloud OK' in 2 words.", provider="gemini")
+            print(f"    ✅ Gemini: {response.strip()[:50]}")
             results["gemini"] = True
         except Exception as e:
             print(f"    ❌ Gemini: {e}")
             results["gemini"] = False
 
-    # Test Claude (requires API key)
+    # Test Claude (Optional)
     if provider in ["all", "claude"]:
-        print("\n[Claude] בודק חיבור...")
+        print("\n[Claude] Testing cloud connection...")
         try:
-            response = ask_ai(
-                "Say 'Claude connected!' in exactly 2 words.",
-                provider="claude"
-            )
-            print(f"    ✅ Claude: {response.strip()}")
+            response = ask_ai("Say 'Claude OK' in 2 words.", provider="claude")
+            print(f"    ✅ Claude: {response.strip()[:50]}")
             results["claude"] = True
         except Exception as e:
-            error_msg = str(e)
-            if "ANTHROPIC_API_KEY" in error_msg:
-                print(f"    ⚠️  Claude: API key not configured (optional)")
+            if "ANTHROPIC_API_KEY" in str(e):
+                print("    ⚠️ Claude: API key not configured (optional)")
             else:
                 print(f"    ❌ Claude: {e}")
             results["claude"] = False
 
-    # Test AquaBrain with working provider
-    if any(results.values()):
-        print("\n[AquaBrain] בודק מומחיות...")
-        working_provider = "gemini" if results.get("gemini") else "claude"
+    # Test Smart Router
+    if results.get("ollama") or results.get("gemini"):
+        print("\n[Smart Router] Testing auto-routing...")
         try:
-            response = ask_aquabrain(
-                "מה הקוטר המינימלי לצינור ענף ספרינקלרים לפי NFPA 13?",
-                provider=working_provider
-            )
-            print(f"    ✅ AquaBrain ({working_provider}):")
-            print(f"       {response.strip()[:150]}...")
+            response = smart_ask("Write a simple Python hello world function")
+            print(f"    ✅ Smart Router: {response.strip()[:80]}...")
         except Exception as e:
-            print(f"    ❌ AquaBrain: {e}")
+            print(f"    ❌ Smart Router: {e}")
 
     print("\n" + "=" * 60)
-
-    # Summary
     working = [k for k, v in results.items() if v]
-    if working:
-        print(f"✅ מחובר: {', '.join(working)}")
-        print(f"   ברירת מחדל: {DEFAULT_PROVIDER} ({DEFAULT_GEMINI_MODEL})")
-    else:
-        print("❌ אין חיבור לאף provider")
-
+    print(f"✅ Active providers: {', '.join(working) if working else 'None'}")
+    print(f"🏠 Local-first: {'Ollama' if results.get('ollama') else 'Gemini (fallback)'}")
     print("=" * 60)
+
     return results
 
 

@@ -14,6 +14,10 @@ import {
   Calculator,
   Rocket,
   Globe,
+  UserCog,
+  FileText,
+  Zap,
+  GitBranch,
 } from 'lucide-react';
 import { useSystemStatus } from '@/hooks/useSystemStatus';
 import { useLanguage, LanguageSwitcher, type Language } from '@/contexts/LanguageContext';
@@ -27,7 +31,11 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { icon: LayoutDashboard, labelKey: "dashboard", href: "/" },
+  { icon: UserCog, labelKey: "profile", href: "/profile" },
   { icon: Rocket, labelKey: "autopilot", href: "/autopilot", badge: "AI" },
+  { icon: Zap, labelKey: "skills", href: "/skills", badge: "V3.3" },
+  { icon: GitBranch, labelKey: "pipelines", href: "/pipelines", badge: "NEW" },
+  { icon: FileText, labelKey: "documents", href: "/documents" },
   { icon: Calculator, labelKey: "calculation", href: "/calculation" },
   { icon: AlertTriangle, labelKey: "clashes", href: "/clashes" },
   { icon: MessageSquare, labelKey: "communication", href: "/communication", badge: "LIVE" },
@@ -39,6 +47,10 @@ const NAV_ITEMS: NavItem[] = [
 const LABEL_FALLBACKS: Record<string, Record<Language, string>> = {
   clashes: { he: 'התנגשויות', en: 'Clashes', ru: 'Коллизии' },
   workplan: { he: 'תוכנית עבודה', en: 'Work Plan', ru: 'План работы' },
+  profile: { he: 'פרטים', en: 'Profile', ru: 'Профиль' },
+  documents: { he: 'מסמכים', en: 'Documents', ru: 'Документы' },
+  skills: { he: 'מפעל Skills', en: 'Skills Factory', ru: 'Фабрика Skills' },
+  pipelines: { he: 'צינורות', en: 'Pipelines', ru: 'Конвейеры' },
 };
 
 interface DashboardShellProps {
