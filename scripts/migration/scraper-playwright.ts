@@ -163,11 +163,18 @@ async function main() {
   console.log(`${colors.green}${colors.bright}   🚀 ADMIRAL DATA RESCUE - PLAYWRIGHT EDITION${colors.reset}`);
   console.log('█'.repeat(60) + '\n');
 
-  const credentials = {
-    orgCode: process.env.ADMIRAL_ORG || '208116',
-    username: process.env.ADMIRAL_USER || 'נימרוד',
-    password: process.env.ADMIRAL_PASS || '100נימרוד',
-  };
+  // SECURITY: Credentials MUST be set via environment variables - no fallbacks
+  const orgCode = process.env.ADMIRAL_ORG;
+  const username = process.env.ADMIRAL_USER;
+  const password = process.env.ADMIRAL_PASS;
+
+  if (!orgCode || !username || !password) {
+    console.error(`${colors.red}${colors.bright}ERROR: Missing required credentials${colors.reset}`);
+    console.error('Please set environment variables: ADMIRAL_ORG, ADMIRAL_USER, ADMIRAL_PASS');
+    process.exit(1);
+  }
+
+  const credentials = { orgCode, username, password };
 
   log(`Credentials: Org=${credentials.orgCode}, User=${credentials.username}`, 'info');
 

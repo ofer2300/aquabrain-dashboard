@@ -17,9 +17,47 @@ import subprocess
 import json
 import os
 import re
+import shlex
 from typing import Dict, Any, List, Optional
 from pathlib import Path
 from datetime import datetime
+
+
+def validate_path(path: str, allowed_extensions: Optional[List[str]] = None) -> str:
+    """
+    Validate and sanitize file paths to prevent command injection.
+
+    Args:
+        path: The file path to validate
+        allowed_extensions: Optional list of allowed file extensions (e.g., ['.dwg', '.dxf'])
+
+    Returns:
+        Sanitized absolute path
+
+    Raises:
+        ValueError: If path is invalid or contains suspicious patterns
+    """
+    if not path:
+        raise ValueError("Path cannot be empty")
+
+    # Block dangerous patterns
+    dangerous_patterns = [
+        ';', '&', '|', '$', '`', '\n', '\r', '\x00',
+        '$(', '${', '..', '<', '>', '"', "'", '\\\\',
+    ]
+    for pattern in dangerous_patterns:
+        if pattern in path:
+            raise ValueError(f"Path contains forbidden character: {pattern!r}")
+
+    # Resolve to absolute path
+    resolved = Path(path).resolve()
+
+    # Check extension if specified
+    if allowed_extensions:
+        if resolved.suffix.lower() not in [ext.lower() for ext in allowed_extensions]:
+            raise ValueError(f"File extension not allowed: {resolved.suffix}")
+
+    return str(resolved)
 
 # Import skill base classes
 import sys
@@ -99,7 +137,7 @@ class AutoCADExtractSkill(AquaSkill):
         return os.path.exists("/proc/version") and "microsoft" in open("/proc/version").read().lower()
 
     def _wsl_to_windows_path(self, wsl_path: str) -> str:
-        """
+        r"""
         Convert WSL path (/mnt/c/...) to Windows path (C:\...).
 
         Examples:
@@ -498,8 +536,11 @@ class AutoCADOpenDWGSkill(AquaSkill):
 
         autocad_exe = None
         for path in autocad_paths:
-            check_cmd = f'powershell.exe -Command "Test-Path \'{path}\'"'
-            result = subprocess.run(check_cmd, shell=True, capture_output=True, text=True)
+            # SECURITY: Use list args instead of shell=True to prevent injection
+            result = subprocess.run(
+                ["powershell.exe", "-Command", f"Test-Path '{path}'"],
+                capture_output=True, text=True
+            )
             if "True" in result.stdout:
                 autocad_exe = path
                 break
@@ -511,9 +552,9 @@ class AutoCADOpenDWGSkill(AquaSkill):
                 message="AutoCAD not found"
             )
 
-        # Open AutoCAD with file
-        cmd = f'powershell.exe -Command "Start-Process \'{autocad_exe}\' -ArgumentList \'\\"{windows_path}\\"\'"'
-        subprocess.run(cmd, shell=True)
+        # SECURITY: Use list args to prevent command injection
+        ps_command = f'Start-Process "{autocad_exe}" -ArgumentList @("{windows_path}")'
+        subprocess.run(["powershell.exe", "-Command", ps_command])
 
         return ExecutionResult(
             status=ExecutionStatus.SUCCESS,
@@ -550,6 +591,16 @@ class AutoCADRunLISPSkill(AquaSkill):
         dwg_path = inputs.get("dwg_path", "")
         lisp_code = inputs.get("lisp_code", "")
 
+        # SECURITY: Validate dwg_path to prevent injection
+        try:
+            validated_dwg = validate_path(dwg_path, allowed_extensions=['.dwg', '.dxf'])
+        except ValueError as e:
+            return ExecutionResult(
+                status=ExecutionStatus.FAILED,
+                skill_id=self.metadata.id,
+                message=f"Invalid DWG path: {e}"
+            )
+
         # Create temp LISP file
         import tempfile
         with tempfile.NamedTemporaryFile(mode='w', suffix='.lsp', delete=False) as f:
@@ -562,19 +613,22 @@ class AutoCADRunLISPSkill(AquaSkill):
             f.write('QSAVE\n')
             scr_file = f.name
 
-        # Convert paths for Windows
+        # Convert paths for Windows (using secure subprocess without shell)
         try:
-            windows_dwg = subprocess.run(["wslpath", "-w", dwg_path], capture_output=True, text=True).stdout.strip()
+            windows_dwg = subprocess.run(["wslpath", "-w", validated_dwg], capture_output=True, text=True).stdout.strip()
             windows_scr = subprocess.run(["wslpath", "-w", scr_file], capture_output=True, text=True).stdout.strip()
-        except:
-            windows_dwg = dwg_path
+        except Exception:
+            windows_dwg = validated_dwg
             windows_scr = scr_file
 
-        # Run accoreconsole
+        # SECURITY: Run accoreconsole using list args instead of shell=True
         accore = "C:\\Program Files\\Autodesk\\AutoCAD 2026\\accoreconsole.exe"
-        cmd = f'powershell.exe -Command "& \'{accore}\' /i \'{windows_dwg}\' /s \'{windows_scr}\' /l en-US"'
+        ps_command = f'& "{accore}" /i "{windows_dwg}" /s "{windows_scr}" /l en-US'
 
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=120)
+        result = subprocess.run(
+            ["powershell.exe", "-Command", ps_command],
+            capture_output=True, text=True, timeout=120
+        )
 
         # Cleanup
         os.unlink(lisp_file)

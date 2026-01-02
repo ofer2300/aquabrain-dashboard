@@ -31,7 +31,46 @@ from datetime import datetime
 from enum import Enum
 import sys
 import os
+import re
+from pathlib import Path
 from pydantic import BaseModel, Field, validator
+
+
+def validate_path_for_command(path: str, allowed_extensions: Optional[List[str]] = None) -> str:
+    """
+    Validate file paths before using them in subprocess commands.
+    Prevents command injection attacks.
+
+    Args:
+        path: The file path to validate
+        allowed_extensions: Optional list of allowed extensions
+
+    Returns:
+        Validated path string
+
+    Raises:
+        ValueError: If path contains dangerous characters
+    """
+    if not path or not path.strip():
+        raise ValueError("Path cannot be empty")
+
+    # Block shell metacharacters that could enable injection
+    dangerous_chars = [';', '&', '|', '$', '`', '\n', '\r', '\x00', '<', '>']
+    for char in dangerous_chars:
+        if char in path:
+            raise ValueError(f"Path contains forbidden character: {char!r}")
+
+    # Check for path traversal
+    if '..' in path:
+        raise ValueError("Path traversal (..) not allowed")
+
+    # Validate extension if specified
+    if allowed_extensions:
+        ext = Path(path).suffix.lower()
+        if ext not in [e.lower() for e in allowed_extensions]:
+            raise ValueError(f"Extension {ext} not in allowed list: {allowed_extensions}")
+
+    return path
 
 # Import ExecutionStatus for skill chain router
 try:
@@ -880,6 +919,16 @@ class AutoCADCoreExecutor:
         import subprocess
         from datetime import datetime
 
+        # SECURITY: Validate dwg_path before using in command
+        try:
+            validated_dwg = validate_path_for_command(dwg_path, allowed_extensions=['.dwg', '.dxf'])
+        except ValueError as e:
+            return {
+                "success": False,
+                "error": f"Invalid DWG path: {e}",
+                "security_blocked": True
+            }
+
         output_dir = output_dir or self.OUTPUT_DIR
 
         if not self.is_available():
@@ -889,7 +938,7 @@ class AutoCADCoreExecutor:
                 "mock_mode": True
             }
 
-        # Create temp script file
+        # Create temp script file with validated filename
         script_filename = f"aquabrain_{datetime.now().strftime('%Y%m%d%H%M%S')}.scr"
         script_path = f"{self.TEMP_DIR}\\{script_filename}"
 
@@ -901,7 +950,7 @@ class AutoCADCoreExecutor:
             capture_output=True
         )
 
-        # Write script
+        # Write script (escape single quotes for PowerShell)
         script_escaped = script_content.replace("'", "''")
         subprocess.run(
             ["powershell.exe", "-Command",
@@ -909,8 +958,8 @@ class AutoCADCoreExecutor:
             capture_output=True
         )
 
-        # Execute
-        cmd = f'& "{self.AUTOCAD_PATH}" /i "{dwg_path}" /s "{script_path}" /l en-US'
+        # Execute with validated path
+        cmd = f'& "{self.AUTOCAD_PATH}" /i "{validated_dwg}" /s "{script_path}" /l en-US'
 
         try:
             result = subprocess.run(
